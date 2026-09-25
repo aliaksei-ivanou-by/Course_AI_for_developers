@@ -11,8 +11,8 @@ The course contains 13 lessons organized into five submodules.
 
 ### 2. Your First Prompt
 
-1. Installing Claude Code
-2. Your First Prompt
+1. [Installing Claude Code](02%20Your%20First%20Prompt/01%20Installing%20Claude%20Code.md)
+2. [Your First Prompt](02%20Your%20First%20Prompt/02%20Your%20First%20Prompt.md)
 
 ### 3. Daily Workflows
 
