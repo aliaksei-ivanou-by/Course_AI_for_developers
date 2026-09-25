@@ -30,7 +30,7 @@ The course contains 13 lessons organized into five submodules.
 
 ### 5. Quiz
 
-1. Course Quiz
+1. [Course Quiz](05%20Quiz/01%20Course%20Quiz.md)
 
 ## Course Information
 
