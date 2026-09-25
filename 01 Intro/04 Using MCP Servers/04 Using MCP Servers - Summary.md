@@ -1,0 +1,3 @@
+# Summary: Using MCP Servers
+
+Model Context Protocol (MCP) gives AI agents structured access to external tools, documentation, and systems. Useful servers include GitHub, Playwright, Context7, Figma, and Supabase, while custom servers can support private or specialized workflows. Because agents treat connected servers as trusted, official or internally reviewed MCP servers should be preferred, and organizations should maintain an allowlist of approved integrations. Setup normally follows the server's official instructions and may use a command or configuration file. Once connected, an MCP server can help an agent retrieve current documentation, interact with development platforms, and perform tasks beyond the model's built-in capabilities.
