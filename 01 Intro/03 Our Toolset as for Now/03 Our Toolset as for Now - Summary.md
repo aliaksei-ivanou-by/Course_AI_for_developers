@@ -1,0 +1,3 @@
+# Summary: Current Toolset for AI-Assisted Development
+
+This lesson compares the course's three primary AI development tools: Claude Code, OpenAI Codex, and Google Antigravity. Claude Code helped establish many modern agent features, Codex combines broad command-line capabilities with generous usage limits, and Antigravity provides a Google-backed CLI and IDE with access to Google and Claude models. All three can work from or alongside VS Code and support agentic development workflows. The best choice depends on output quality, cost, limits, and personal workflow, while every terminal-based agent requires careful supervision because it can run commands and modify the codebase.
