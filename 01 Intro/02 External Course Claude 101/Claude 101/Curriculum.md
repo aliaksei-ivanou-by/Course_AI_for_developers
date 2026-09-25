@@ -22,11 +22,11 @@ The course contains 13 lessons organized into five submodules.
 
 ### 4. Customizing Claude Code
 
-1. The `CLAUDE.md` File
-2. Subagents
-3. Skills
-4. MCP
-5. Hooks
+1. [The `CLAUDE.md` File](04%20Customizing%20Claude%20Code/01%20The%20CLAUDE.md%20File.md)
+2. [Subagents](04%20Customizing%20Claude%20Code/02%20Subagents.md)
+3. [Skills](04%20Customizing%20Claude%20Code/03%20Skills.md)
+4. [MCP](04%20Customizing%20Claude%20Code/04%20MCP.md)
+5. [Hooks](04%20Customizing%20Claude%20Code/05%20Hooks.md)
 
 ### 5. Quiz
 
