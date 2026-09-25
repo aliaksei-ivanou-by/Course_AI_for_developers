@@ -16,9 +16,9 @@ The course contains 13 lessons organized into five submodules.
 
 ### 3. Daily Workflows
 
-1. The Explore → Plan → Code → Commit Workflow
-2. Context Management
-3. Code Review
+1. [The Explore → Plan → Code → Commit Workflow](03%20Daily%20Workflows/01%20The%20Explore%20→%20Plan%20→%20Code%20→%20Commit%20Workflow.md)
+2. [Context Management](03%20Daily%20Workflows/02%20Context%20Management.md)
+3. [Code Review](03%20Daily%20Workflows/03%20Code%20Review.md)
 
 ### 4. Customizing Claude Code
 
