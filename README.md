@@ -56,6 +56,7 @@ The Claude Code 101 section also contains structured notes for every lesson. See
 | 2. Context-aware prompt enhancement | [Using Augment Code](02%20Meta-Prompting/02%20Context-Aware%20Prompt%20Enhancement%20with%20Augment%20Code/02%20Context-Aware%20Prompt%20Enhancement%20with%20Augment%20Code.md) | [Summary](02%20Meta-Prompting/02%20Context-Aware%20Prompt%20Enhancement%20with%20Augment%20Code/02%20Context-Aware%20Prompt%20Enhancement%20with%20Augment%20Code%20-%20Summary.md) |
 | 3. Tool-agnostic meta-prompting | [Meta-Prompting with Codebase Awareness](02%20Meta-Prompting/03%20Tool-Agnostic%20Meta-Prompting/03%20Tool-Agnostic%20Meta-Prompting.md) | [Summary](02%20Meta-Prompting/03%20Tool-Agnostic%20Meta-Prompting/03%20Tool-Agnostic%20Meta-Prompting%20-%20Summary.md) |
 | 4. Meta-prompting with NotebookLM | [Source-Grounded PRDs and Project Principles](02%20Meta-Prompting/04%20Meta-Prompting%20with%20NotebookLM/04%20Meta-Prompting%20with%20NotebookLM.md) | [Summary](02%20Meta-Prompting/04%20Meta-Prompting%20with%20NotebookLM/04%20Meta-Prompting%20with%20NotebookLM%20-%20Summary.md) |
+| 5. Creating your first PRD | [PRD Generation with AI Dev Tasks](02%20Meta-Prompting/05%20Creating%20your%20first%20Product%20Requirement%20Document/05%20Creating%20your%20first%20Product%20Requirement%20Document.md) | [Summary](02%20Meta-Prompting/05%20Creating%20your%20first%20Product%20Requirement%20Document/05%20Creating%20your%20first%20Product%20Requirement%20Document%20-%20Summary.md) |
 
 ## How to Use This Repository
 
@@ -82,7 +83,8 @@ Course_AI_for_developers/
     ├── 01 Structuring Prompts (Prompt Engineering in a Nutshell)/
     ├── 02 Context-Aware Prompt Enhancement with Augment Code/
     ├── 03 Tool-Agnostic Meta-Prompting/
-    └── 04 Meta-Prompting with NotebookLM/
+    ├── 04 Meta-Prompting with NotebookLM/
+    └── 05 Creating your first Product Requirement Document/
 ```
 
 Full lessons and summaries are stored separately. Images and other reference files are kept next to the Markdown documents that use them.
@@ -93,4 +95,4 @@ AI coding agents can read and modify files, execute commands, run tests, and int
 
 ## Project Status
 
-This repository is a work in progress. The introduction module and the first four meta-prompting lessons are available now, and additional course material will be added over time.
+This repository is a work in progress. The introduction module and the first five meta-prompting lessons are available now, and additional course material will be added over time.
