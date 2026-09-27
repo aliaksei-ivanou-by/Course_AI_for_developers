@@ -31,6 +31,8 @@ Prompt enhancement combines an initial developer request with additional informa
 
 A generic enhancer improves how a request is written. A context-aware enhancer improves both the wording and the request's connection to the actual project.
 
+The lesson contrasts Augment Code with generic prompt enhancers in tools such as Roo Code and Kilo Code. A generic enhancer can apply prompt-writing best practices, but without workspace awareness it cannot reliably identify what the project contains, where a change belongs, or which files should be modified.
+
 This distinction matters because a polished but context-free prompt may still force a coding agent to search broadly, make assumptions, or choose an unsuitable implementation path. A grounded prompt can direct the agent toward the most relevant parts of the codebase from the beginning.
 
 ## Augment Code as a Context Engine
@@ -127,6 +129,14 @@ The workflow becomes:
 7. Review and test the resulting code.
 
 This separation can be useful when one tool has strong repository retrieval but another is preferred for implementation because of cost, quality, limits, or availability.
+
+## Result of the Demonstration
+
+In the lesson, the enhanced prompt is copied into Codex rather than executed by Augment Code. Codex modifies the Go Agent project, after which the project is compiled and run again. When the developer sends `hello`, the agent now prints both input- and output-token counts.
+
+The implementation satisfies the short request, but it also exposes an important limitation. The developer asked only to enable input- and output-token consumption information and did not specify exactly where or how the values should appear. Codex therefore selected a simple presentation on its own.
+
+This is considered a successful result because the requested data is displayed, but a production task might need an additional requirement such as placing the counts in a status line, showing per-request rather than cumulative totals, or preserving a particular terminal layout. Context awareness can discover the code; it cannot infer every product decision.
 
 ## Why Better Context Can Improve First-Attempt Results
 
