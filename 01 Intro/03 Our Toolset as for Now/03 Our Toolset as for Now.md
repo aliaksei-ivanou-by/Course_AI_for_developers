@@ -4,19 +4,21 @@ This lesson introduces the tools currently used in the course to accelerate AI-a
 
 The core toolset consists of Claude Code, OpenAI Codex, and Google Antigravity. Each tool has its own interface, model selection, strengths, and usage limits. All three can act on a developer's behalf, so they must be used with the same care as any other tool that can run terminal commands and modify a codebase.
 
+> **Time-sensitive snapshot:** This comparison reflects the toolset available in June 2026. Model availability, pricing, usage limits, and product interfaces change quickly and should be verified against current official documentation before making a tooling decision.
+
 ## Toolset at a Glance
 
 | Tool | Main interfaces | Model options covered in this lesson | Notable characteristics |
 | --- | --- | --- | --- |
-| Claude Code | CLI and editor extension | Opus, Sonnet, and Haiku | An industry-leading reference point for features such as subagents, MCP, skills, and hooks |
-| OpenAI Codex | CLI and VS Code extension | GPT-5.5, GPT-5.4, and GPT-5.4 mini | Strong terminal capabilities and generous usage limits for the price |
+| Claude Code | CLI and editor extension; Claude is also available as a desktop application | Opus, Sonnet, and Haiku | An industry-leading reference point for features such as subagents, MCP, skills, and hooks |
+| OpenAI Codex | CLI, desktop application, and VS Code extension | GPT-5.5, GPT-5.4, and GPT-5.4 mini | Strong terminal capabilities and generous usage limits for the price |
 | Google Antigravity | CLI and its own VS Code-based IDE | Gemini 3.5 Flash, Gemini 3.1 Pro, Claude Sonnet, and Claude Opus | Google-backed agent environment with a free tier for Innowise users |
 
 ## Claude Code
 
-Claude Code is one of the main tools used for AI-assisted development. It is available as a terminal or CLI tool and as an editor extension. Its interactive interface includes slash commands and a wide range of configuration options.
+Claude Code is one of the main tools used for AI-assisted development. It is available as a terminal or CLI tool and as an editor extension, while the broader Claude product is also available as a desktop application. Claude Code's interactive interface includes slash commands and a wide range of configuration options.
 
-Claude Code supports Anthropic models such as Opus, Sonnet, and Haiku. The lesson also mentions Fable, a previously available model that was considered strong but is currently unavailable because of United States government security restrictions. Even without Fable, Claude Code remains one of the industry's leading AI-assisted development tools.
+Claude Code supports Anthropic models such as Opus, Sonnet, and Haiku. The lesson also mentions Fable, a model described as strong that was temporarily unavailable at the time of recording because of United States government security restrictions. Even without Fable, Claude Code remained one of the industry's leading AI-assisted development tools.
 
 Claude Code is also important because Anthropic introduced or popularized several capabilities that now appear across the market, including:
 
@@ -30,7 +32,7 @@ Tools such as OpenAI Codex and Google Antigravity now follow many of the same pa
 
 ## OpenAI Codex
 
-OpenAI Codex can be understood as ChatGPT in the terminal. It can write code, run tests, create or assist with pull requests, and perform many other command-line tasks.
+OpenAI Codex can be understood as ChatGPT in the terminal. It is also available through a desktop application and editor integration. Codex can write code, run tests, create or assist with pull requests, and perform many other command-line tasks.
 
 This level of access makes Codex powerful, but it also requires caution. A command-line agent that can perform the same actions as a developer can also make mistakes at the same level of access. The same principle applies to Claude Code and Google Antigravity.
 
@@ -48,7 +50,7 @@ The same principle applies to the other tools: developers should understand thei
 
 Google Antigravity is another tool in the current AI-assisted development toolset. Google previously offered Gemini CLI, which has now been deprecated in favor of the newer Antigravity CLI.
 
-Antigravity supports Google models such as Gemini 3.5 Flash and Gemini 3.1 Pro. It also provides access to Claude Sonnet and Claude Opus, although not to their latest versions. This is possible because Claude models run in Google Cloud and can therefore be offered through Google Antigravity.
+Antigravity supports Google models such as Gemini 3.5 Flash and Gemini 3.1 Pro. It also provides access to Claude Sonnet and Claude Opus, although not to their latest versions. Claude models are available through Google Cloud, which allows Google to offer access to selected versions through Antigravity.
 
 Antigravity includes many of the same feature categories as Claude Code and Codex, including skills, subagents, and MCP support. These tools are becoming increasingly similar in terms of their available capabilities.
 
@@ -72,6 +74,7 @@ All three tools can be incorporated into a VS Code-based workflow.
 
 - **Built-in terminal:** Developers can launch Codex, Claude Code, or Antigravity from the terminal in VS Code and let the agent work in the open project.
 - **Editor extensions:** Claude Code and Codex are available as VS Code extensions, providing integrated side chats and extension-based workflows.
+- **Standalone applications:** Claude and Codex also provide desktop application experiences for developers who prefer to work outside the editor.
 - **Multiple assistants:** GitHub Copilot, Codex, and Claude Code can all be available in the same editor, although the setup may need to be managed to avoid unnecessary duplication.
 - **Antigravity IDE:** Antigravity has its own application and IDE. It resembles VS Code because it is a fork of VS Code, and it includes a built-in chat window for working with the Antigravity agent.
 
