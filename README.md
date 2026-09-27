@@ -26,6 +26,7 @@ The course introduces:
 - Claude Code, OpenAI Codex, and Google Antigravity
 - Terminal- and editor-based agent workflows
 - The explore → plan → code → commit workflow
+- Prompt structuring and context-aware prompt enhancement
 - Context management and project instructions
 - Subagents, skills, hooks, and Model Context Protocol (MCP)
 - MCP configuration, practical use cases, and security considerations
@@ -52,6 +53,7 @@ The Claude Code 101 section also contains structured notes for every lesson. See
 | Lesson | Full material | Short version |
 | --- | --- | --- |
 | 1. Structuring prompts | [Prompt Engineering in a Nutshell](02%20Meta-Prompting/01%20Structuring%20Prompts%20%28Prompt%20Engineering%20in%20a%20Nutshell%29/01%20Structuring%20Prompts%20%28Prompt%20Engineering%20in%20a%20Nutshell%29.md) | [Summary](02%20Meta-Prompting/01%20Structuring%20Prompts%20%28Prompt%20Engineering%20in%20a%20Nutshell%29/01%20Structuring%20Prompts%20%28Prompt%20Engineering%20in%20a%20Nutshell%29%20-%20Summary.md) |
+| 2. Context-aware prompt enhancement | [Using Augment Code](02%20Meta-Prompting/02%20Context-Aware%20Prompt%20Enhancement%20with%20Augment%20Code/02%20Context-Aware%20Prompt%20Enhancement%20with%20Augment%20Code.md) | [Summary](02%20Meta-Prompting/02%20Context-Aware%20Prompt%20Enhancement%20with%20Augment%20Code/02%20Context-Aware%20Prompt%20Enhancement%20with%20Augment%20Code%20-%20Summary.md) |
 
 ## How to Use This Repository
 
@@ -75,7 +77,8 @@ Course_AI_for_developers/
 │   ├── 04 Using MCP Servers/
 │   └── 05 Intro Quiz/
 └── 02 Meta-Prompting/
-    └── 01 Structuring Prompts (Prompt Engineering in a Nutshell)/
+    ├── 01 Structuring Prompts (Prompt Engineering in a Nutshell)/
+    └── 02 Context-Aware Prompt Enhancement with Augment Code/
 ```
 
 Full lessons and summaries are stored separately. Images and other reference files are kept next to the Markdown documents that use them.
@@ -86,4 +89,4 @@ AI coding agents can read and modify files, execute commands, run tests, and int
 
 ## Project Status
 
-This repository is a work in progress. The introduction module and the first meta-prompting lesson are available now, and additional course material will be added over time.
+This repository is a work in progress. The introduction module and the first two meta-prompting lessons are available now, and additional course material will be added over time.
