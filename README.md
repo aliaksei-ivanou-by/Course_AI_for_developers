@@ -57,6 +57,7 @@ The Claude Code 101 section also contains structured notes for every lesson. See
 | 3. Tool-agnostic meta-prompting | [Meta-Prompting with Codebase Awareness](02%20Meta-Prompting/03%20Tool-Agnostic%20Meta-Prompting/03%20Tool-Agnostic%20Meta-Prompting.md) | [Summary](02%20Meta-Prompting/03%20Tool-Agnostic%20Meta-Prompting/03%20Tool-Agnostic%20Meta-Prompting%20-%20Summary.md) |
 | 4. Meta-prompting with NotebookLM | [Source-Grounded PRDs and Project Principles](02%20Meta-Prompting/04%20Meta-Prompting%20with%20NotebookLM/04%20Meta-Prompting%20with%20NotebookLM.md) | [Summary](02%20Meta-Prompting/04%20Meta-Prompting%20with%20NotebookLM/04%20Meta-Prompting%20with%20NotebookLM%20-%20Summary.md) |
 | 5. Creating your first PRD | [PRD Generation with AI Dev Tasks](02%20Meta-Prompting/05%20Creating%20your%20first%20Product%20Requirement%20Document/05%20Creating%20your%20first%20Product%20Requirement%20Document.md) | [Summary](02%20Meta-Prompting/05%20Creating%20your%20first%20Product%20Requirement%20Document/05%20Creating%20your%20first%20Product%20Requirement%20Document%20-%20Summary.md) |
+| 6. Module assessment | [Structured Prompts Quiz](02%20Meta-Prompting/06%20Structured%20Prompts%20Quiz/06%20Structured%20Prompts%20Quiz.md) | — |
 
 ## How to Use This Repository
 
@@ -84,7 +85,8 @@ Course_AI_for_developers/
     ├── 02 Context-Aware Prompt Enhancement with Augment Code/
     ├── 03 Tool-Agnostic Meta-Prompting/
     ├── 04 Meta-Prompting with NotebookLM/
-    └── 05 Creating your first Product Requirement Document/
+    ├── 05 Creating your first Product Requirement Document/
+    └── 06 Structured Prompts Quiz/
 ```
 
 Full lessons and summaries are stored separately. Images and other reference files are kept next to the Markdown documents that use them.
@@ -95,4 +97,4 @@ AI coding agents can read and modify files, execute commands, run tests, and int
 
 ## Project Status
 
-This repository is a work in progress. The introduction module and the first five meta-prompting lessons are available now, and additional course material will be added over time.
+This repository is a work in progress. The introduction module and the meta-prompting module, including their assessments, are available now. Additional course material will be added over time.
