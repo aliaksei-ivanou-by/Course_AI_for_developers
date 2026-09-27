@@ -31,7 +31,7 @@ The course introduces:
 - MCP configuration, practical use cases, and security considerations
 - Applied workflows such as AI-assisted CI/CD troubleshooting and cloud migration
 
-Later modules are expected to cover meta-prompting, spec-driven development, context engineering, advanced agent techniques, and applied practices.
+Later modules expand on meta-prompting, spec-driven development, context engineering, advanced agent techniques, and applied practices.
 
 ## Current Course Content
 
@@ -47,6 +47,12 @@ Later modules are expected to cover meta-prompting, spec-driven development, con
 
 The Claude Code 101 section also contains structured notes for every lesson. See its [curriculum](01%20Intro/02%20External%20Course%20Claude%20101/Claude%20101/Curriculum.md) for direct navigation.
 
+### Module 02 — Meta-Prompting
+
+| Lesson | Full material | Short version |
+| --- | --- | --- |
+| 1. Structuring prompts | [Prompt Engineering in a Nutshell](02%20Meta-Prompting/01%20Structuring%20Prompts%20%28Prompt%20Engineering%20in%20a%20Nutshell%29/01%20Structuring%20Prompts%20%28Prompt%20Engineering%20in%20a%20Nutshell%29.md) | [Summary](02%20Meta-Prompting/01%20Structuring%20Prompts%20%28Prompt%20Engineering%20in%20a%20Nutshell%29/01%20Structuring%20Prompts%20%28Prompt%20Engineering%20in%20a%20Nutshell%29%20-%20Summary.md) |
+
 ## How to Use This Repository
 
 1. Follow the numbered modules and lessons in order.
@@ -61,13 +67,15 @@ The Claude Code 101 section also contains structured notes for every lesson. See
 ```text
 Course_AI_for_developers/
 ├── README.md
-└── 01 Intro/
-    ├── 01 Welcome/
-    ├── 02 External Course Claude 101/
-    │   └── Claude 101/
-    ├── 03 Our Toolset as for Now/
-    ├── 04 Using MCP Servers/
-    └── 05 Intro Quiz/
+├── 01 Intro/
+│   ├── 01 Welcome/
+│   ├── 02 External Course Claude 101/
+│   │   └── Claude 101/
+│   ├── 03 Our Toolset as for Now/
+│   ├── 04 Using MCP Servers/
+│   └── 05 Intro Quiz/
+└── 02 Meta-Prompting/
+    └── 01 Structuring Prompts (Prompt Engineering in a Nutshell)/
 ```
 
 Full lessons and summaries are stored separately. Images and other reference files are kept next to the Markdown documents that use them.
@@ -78,4 +86,4 @@ AI coding agents can read and modify files, execute commands, run tests, and int
 
 ## Project Status
 
-This repository is a work in progress. The introduction module is available now, and additional course modules will be added over time.
+This repository is a work in progress. The introduction module and the first meta-prompting lesson are available now, and additional course material will be added over time.

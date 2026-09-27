@@ -1,0 +1,3 @@
+# Summary: Structuring Prompts
+
+Prompt engineering in modern AI-assisted development is less about perfect wording and more about clearly separating the task, input, constraints, and expected output. Simple coding requests may need only direct natural language, while reusable prompts, tool-using agents, and custom AI systems benefit from explicit structure. Markdown, YAML, JSON, and XML can all organize prompts; XML is particularly convenient for human-written instructions because custom tags create clear boundaries without strict indentation or dense punctuation. Structure reduces ambiguity, but it is not a security boundary: workflows that handle untrusted input still require appropriate permissions, validation, isolation, and prompt-injection defenses.
