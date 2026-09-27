@@ -11,7 +11,7 @@ This lesson demonstrates a tool-agnostic meta-prompting workflow, using Codex in
 A rough prompt might say:
 
 ```text
-Fix the input/output context.
+Display input- and output-token usage in a fixed status line.
 ```
 
 The developer may understand what this means, but another agent does not yet know:
@@ -46,10 +46,10 @@ Prompt enhancement reduces these risks by turning an initial idea into a better 
 
 ## Preventing Accidental Task Execution
 
-An instruction such as the following is ambiguous:
+An instruction such as the following is ambiguous at the meta level:
 
 ```text
-Engineer this prompt: fix the input/output context.
+Enhance my prompt: display input- and output-token usage in a fixed status line.
 ```
 
 The model may improve the wording, or it may begin fixing the code immediately. To prevent this confusion, the meta-prompt should state that the original task is an object to transform and must not be executed yet.
@@ -63,7 +63,7 @@ XML-style tags provide clear boundaries:
 </meta_task>
 
 <draft_prompt>
-  Fix the input/output context.
+  Display input- and output-token usage in a fixed status line.
 </draft_prompt>
 ```
 
@@ -83,7 +83,7 @@ A more complete template can define how the agent should inspect the project and
 </meta_task>
 
 <draft_prompt>
-  Fix the input/output context.
+  Display input- and output-token usage in a fixed status line.
 </draft_prompt>
 
 <investigation>
@@ -115,7 +115,7 @@ A coding agent opened inside the project can inspect the workspace before rewrit
 - Project-specific instructions and architectural principles
 - Current documentation when external research is allowed and needed
 
-This evidence helps the agent interpret what a phrase such as “input/output context” probably refers to in this particular project.
+This evidence helps the agent interpret what “input- and output-token usage” and a “status line” probably refer to in this particular project.
 
 The enhanced prompt can then identify the likely scope, explain the intended behavior in project terminology, point to relevant code, and request appropriate validation. Codebase awareness turns generic advice into a task grounded in the current workspace.
 
@@ -166,6 +166,14 @@ The same meta-prompt can be submitted to a general-purpose chatbot. The chatbot 
 A general chatbot might assume TypeScript because it is common in application development even when the project actually uses Go. The resulting prompt may appear professional while remaining poorly matched to the real task.
 
 A codebase-aware agent can avoid many such assumptions by examining the repository. However, access alone does not guarantee that it will retrieve the right context, so the enhanced prompt still requires review.
+
+## What the Implementation Revealed
+
+After comparing the codebase-aware result with Gemini's generic response, the lesson uses the enhanced prompt in a new Codex session. The code is changed, the Go Agent project is compiled, and the updated terminal interface is inspected.
+
+The result resembles a status line, but it does not fully match the instructor's unstated expectation. The intended line should remain fixed at the bottom of the terminal, should not be overwritten, and should not become part of the ordinary output stream. The phrase “fixed status line” was not precise enough for the model to reproduce that interaction reliably.
+
+This partial success demonstrates an important boundary of context-aware meta-prompting: repository inspection can reveal languages, files, and existing implementation details, but it cannot recover a user-interface requirement that exists only in the developer's head. A follow-up prompt should define the behavior explicitly and may include screenshots or examples from other tools.
 
 ## Reviewing the Enhanced Prompt
 
