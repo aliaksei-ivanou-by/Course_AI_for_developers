@@ -100,6 +100,8 @@ For example, Context7 provides a unified setup command:
 npx ctx7 setup
 ```
 
+Installation commands and configuration formats can change. Always copy the current command from the MCP server's official documentation rather than relying on an old example.
+
 Some servers also provide manual configuration for multiple agents. With Claude Code, setup may involve the `claude mcp add` command, selecting a scope, and supplying the options required by the server. Another option is to edit the agent's JSON configuration directly.
 
 The general pattern is consistent: follow the MCP server's instructions and configure the AI agent to connect to that server.
@@ -144,7 +146,7 @@ Documentation tools such as Context7 address this limitation by letting the agen
 
 The basic MCP workflow is straightforward: choose a trusted server, connect it to the agent, and allow the agent to use its tools when needed.
 
-More advanced topics include building custom MCP servers and designing tool interfaces for specific workplace requirements. Anthropic documentation and Anthropic Skilljar courses provide introductory and advanced learning paths for developers who want to create their own MCP servers.
+More advanced topics include building custom MCP servers and designing tool interfaces for specific workplace requirements. Anthropic documentation and its free Skilljar courses on introductory and advanced MCP topics provide learning paths for developers who want to create their own MCP servers.
 
 ## Key Takeaway
 
