@@ -65,6 +65,7 @@ The Claude Code 101 section also contains structured notes for every lesson. See
 | --- | --- | --- |
 | 1. GitHub Spec Kit overview | [GitHub Spec Kit Process Flow](03%20Spec-Driven%20Development/01%20GitHub%20SpecKit%20Brief%20Overview/01%20GitHub%20SpecKit%20Brief%20Overview.md) | [Summary](03%20Spec-Driven%20Development/01%20GitHub%20SpecKit%20Brief%20Overview/01%20GitHub%20SpecKit%20Brief%20Overview%20-%20Summary.md) |
 | 2. Installing GitHub Spec Kit | [Installing GitHub Spec Kit](03%20Spec-Driven%20Development/02%20Installing%20SpecKit/02%20Installing%20SpecKit.md) | [Summary](03%20Spec-Driven%20Development/02%20Installing%20SpecKit/02%20Installing%20SpecKit%20-%20Summary.md) |
+| 3. Creating a project constitution interactively | [Creating a Spec Kit Constitution Interactively](03%20Spec-Driven%20Development/03%20SpecKit%20Constitution%20-%20Interactive/03%20SpecKit%20Constitution%20-%20Interactive.md) | [Summary](03%20Spec-Driven%20Development/03%20SpecKit%20Constitution%20-%20Interactive/03%20SpecKit%20Constitution%20-%20Interactive%20-%20Summary.md) |
 
 ## How to Use This Repository
 
@@ -96,7 +97,8 @@ Course_AI_for_developers/
 │   └── 06 Structured Prompts Quiz/
 └── 03 Spec-Driven Development/
     ├── 01 GitHub SpecKit Brief Overview/
-    └── 02 Installing SpecKit/
+    ├── 02 Installing SpecKit/
+    └── 03 SpecKit Constitution - Interactive/
 ```
 
 Full lessons and summaries are stored separately. Images and other reference files are kept next to the Markdown documents that use them.
@@ -107,4 +109,4 @@ AI coding agents can read and modify files, execute commands, run tests, and int
 
 ## Project Status
 
-This repository is a work in progress. The introduction and meta-prompting modules, including their assessments, are available now, together with the first two spec-driven development lessons. Additional course material will be added over time.
+This repository is a work in progress. The introduction and meta-prompting modules, including their assessments, are available now, together with the first three spec-driven development lessons. Additional course material will be added over time.
