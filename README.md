@@ -105,6 +105,7 @@ The Introduction to Agent Skills section also contains a structured [curriculum]
 | Lesson | Full material | Short version |
 | --- | --- | --- |
 | 1. External course: Introduction to Subagents | [Course overview](04%20Context%20Engineering/03%20Sub-Agents/01%20External%20Course%20Introduction%20to%20subagents/01%20External%20Course%20Introduction%20to%20subagents.md) | [Summary](04%20Context%20Engineering/03%20Sub-Agents/01%20External%20Course%20Introduction%20to%20subagents/01%20External%20Course%20Introduction%20to%20subagents%20-%20Summary.md) |
+| 2. Claude Code Agent Teams | [Lesson](04%20Context%20Engineering/03%20Sub-Agents/02%20Claude%20Code%20Agent%20Teams/02%20Claude%20Code%20Agent%20Teams.md) | [Summary](04%20Context%20Engineering/03%20Sub-Agents/02%20Claude%20Code%20Agent%20Teams/02%20Claude%20Code%20Agent%20Teams%20-%20Summary.md) |
 
 The Introduction to Subagents section also contains a structured [curriculum](04%20Context%20Engineering/03%20Sub-Agents/01%20External%20Course%20Introduction%20to%20subagents/Introduction%20to%20subagents/Curriculum.md) and an [About the Course](04%20Context%20Engineering/03%20Sub-Agents/01%20External%20Course%20Introduction%20to%20subagents/Introduction%20to%20subagents/About%20course.md) page.
 
@@ -164,8 +165,9 @@ Course_AI_for_developers/
     │   └── 01 External Course Intro to Agent Skills/
     │       └── Introduction to agent skills/
     └── 03 Sub-Agents/
-        └── 01 External Course Introduction to subagents/
-            └── Introduction to subagents/
+        ├── 01 External Course Introduction to subagents/
+        │   └── Introduction to subagents/
+        └── 02 Claude Code Agent Teams/
 ```
 
 Full lessons and summaries are stored separately. Images and other reference files are kept next to the Markdown documents that use them.
@@ -176,4 +178,4 @@ AI coding agents can read and modify files, execute commands, run tests, and int
 
 ## Project Status
 
-This repository is a work in progress. The introduction, meta-prompting, and spec-driven development modules, including their assessments, are available now, together with the first nine general-practices lessons in context engineering, the complete six-lesson Introduction to Agent Skills external course, and the Introduction to Subagents external-course overview. Additional course material will be added over time.
+This repository is a work in progress. The introduction, meta-prompting, and spec-driven development modules, including their assessments, are available now, together with the first nine general-practices lessons in context engineering, the complete Introduction to Agent Skills and Introduction to Subagents external courses, and the Claude Code Agent Teams lesson. Additional course material will be added over time.
