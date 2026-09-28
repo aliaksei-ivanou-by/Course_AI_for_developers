@@ -10,9 +10,7 @@ The course contains six lessons and takes approximately one hour to complete.
 
 ### 2. Creating Your First Skill
 
-1. Creating a Skill from scratch
-2. Writing valid `SKILL.md` frontmatter
-3. Verifying that the Skill loads
+1. [Creating Your First Skill](02%20Creating%20your%20first%20skill/02%20Creating%20your%20first%20skill.md)
 
 ### 3. Configuration and Multi-File Skills
 
