@@ -90,6 +90,7 @@ The Claude Code 101 section also contains structured notes for every lesson. See
 | 6. Reducing MCP tool context overhead | [Reducing MCP Server and Tool Context Overhead](04%20Context%20Engineering/01%20General%20practices/06%20Reducing%20the%20number%20of%20MCP%20servers/06%20Reducing%20the%20number%20of%20MCP%20servers.md) | [Summary](04%20Context%20Engineering/01%20General%20practices/06%20Reducing%20the%20number%20of%20MCP%20servers/06%20Reducing%20the%20number%20of%20MCP%20servers%20-%20Summary.md) |
 | 7. Providing current documentation | [Providing AI Agents with Up-to-Date Documentation](04%20Context%20Engineering/01%20General%20practices/07%20Providing%20AI%20with%20up-to-date%20knowledge/07%20Providing%20AI%20with%20up-to-date%20knowledge.md) | [Summary](04%20Context%20Engineering/01%20General%20practices/07%20Providing%20AI%20with%20up-to-date%20knowledge/07%20Providing%20AI%20with%20up-to-date%20knowledge%20-%20Summary.md) |
 | 8. Introduction to codebase indexing | [Codebase Indexing for AI Agents](04%20Context%20Engineering/01%20General%20practices/08%20Intro%20to%20codebase%20indexing/08%20Intro%20to%20codebase%20indexing.md) | [Summary](04%20Context%20Engineering/01%20General%20practices/08%20Intro%20to%20codebase%20indexing/08%20Intro%20to%20codebase%20indexing%20-%20Summary.md) |
+| 9. Consolidated context-engineering article | [Context Engineering for AI-Assisted Development](04%20Context%20Engineering/01%20General%20practices/09%20All%20of%20above%20lessons%20as%20a%20text%20article/09%20All%20of%20above%20lessons%20as%20a%20text%20article.md) | [Summary](04%20Context%20Engineering/01%20General%20practices/09%20All%20of%20above%20lessons%20as%20a%20text%20article/09%20All%20of%20above%20lessons%20as%20a%20text%20article%20-%20Summary.md) |
 
 ## How to Use This Repository
 
@@ -141,7 +142,8 @@ Course_AI_for_developers/
         ├── 05 Dividing tasks by sessions/
         ├── 06 Reducing the number of MCP servers/
         ├── 07 Providing AI with up-to-date knowledge/
-        └── 08 Intro to codebase indexing/
+        ├── 08 Intro to codebase indexing/
+        └── 09 All of above lessons as a text article/
 ```
 
 Full lessons and summaries are stored separately. Images and other reference files are kept next to the Markdown documents that use them.
@@ -152,4 +154,4 @@ AI coding agents can read and modify files, execute commands, run tests, and int
 
 ## Project Status
 
-This repository is a work in progress. The introduction, meta-prompting, and spec-driven development modules, including their assessments, are available now, together with the first eight context-engineering lessons. Additional course material will be added over time.
+This repository is a work in progress. The introduction, meta-prompting, and spec-driven development modules, including their assessments, are available now, together with the first nine context-engineering lessons. Additional course material will be added over time.
