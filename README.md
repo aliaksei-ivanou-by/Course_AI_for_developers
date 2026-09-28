@@ -154,6 +154,7 @@ Course_AI_for_developers/
     │   └── 09 All of above lessons as a text article/
     └── 02 Agent Skills/
         └── 01 External Course Intro to Agent Skills/
+            └── Introduction to agent skills/
 ```
 
 Full lessons and summaries are stored separately. Images and other reference files are kept next to the Markdown documents that use them.
@@ -164,4 +165,4 @@ AI coding agents can read and modify files, execute commands, run tests, and int
 
 ## Project Status
 
-This repository is a work in progress. The introduction, meta-prompting, and spec-driven development modules, including their assessments, are available now, together with the first nine general-practices lessons in context engineering and the first Agent Skills lesson. Additional course material will be added over time.
+This repository is a work in progress. The introduction, meta-prompting, and spec-driven development modules, including their assessments, are available now, together with the first nine general-practices lessons in context engineering and the complete six-lesson Introduction to Agent Skills external course. Additional course material will be added over time.

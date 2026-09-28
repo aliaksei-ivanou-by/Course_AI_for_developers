@@ -26,10 +26,7 @@ The course contains six lessons and takes approximately one hour to complete.
 
 ### 6. Troubleshooting Skills
 
-1. Diagnosing triggering and loading problems
-2. Resolving priority conflicts
-3. Investigating runtime errors
-4. Using the skills validator and `claude --debug`
+1. [Troubleshooting Skills](06%20Troubleshooting%20skills/06%20Troubleshooting%20skills.md)
 
 ## Course Information
 
