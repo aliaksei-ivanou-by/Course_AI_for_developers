@@ -74,6 +74,7 @@ The Claude Code 101 section also contains structured notes for every lesson. See
 | 9. Generating the implementation task list | [Spec Kit Tasks](03%20Spec-Driven%20Development/09%20SpecKit%20Tasks/09%20SpecKit%20Tasks.md) | [Summary](03%20Spec-Driven%20Development/09%20SpecKit%20Tasks/09%20SpecKit%20Tasks%20-%20Summary.md) |
 | 10. Executing and validating the implementation | [Spec Kit Implement](03%20Spec-Driven%20Development/10%20SpecKit%20Implement/10%20SpecKit%20Implement.md) | [Summary](03%20Spec-Driven%20Development/10%20SpecKit%20Implement/10%20SpecKit%20Implement%20-%20Summary.md) |
 | 11. Adding a new feature after the MVP | [Spec Kit Post-MVP](03%20Spec-Driven%20Development/11%20SpecKit%20-%20Post-MVP/11%20SpecKit%20-%20Post-MVP.md) | [Summary](03%20Spec-Driven%20Development/11%20SpecKit%20-%20Post-MVP/11%20SpecKit%20-%20Post-MVP%20-%20Summary.md) |
+| 12. Module assessment | [GitHub Spec Kit Quiz](03%20Spec-Driven%20Development/12%20SpecKit%20Quiz/12%20SpecKit%20Quiz.md) | — |
 
 ## How to Use This Repository
 
@@ -114,7 +115,8 @@ Course_AI_for_developers/
     ├── 08 SpecKit Plan/
     ├── 09 SpecKit Tasks/
     ├── 10 SpecKit Implement/
-    └── 11 SpecKit - Post-MVP/
+    ├── 11 SpecKit - Post-MVP/
+    └── 12 SpecKit Quiz/
 ```
 
 Full lessons and summaries are stored separately. Images and other reference files are kept next to the Markdown documents that use them.
@@ -125,4 +127,4 @@ AI coding agents can read and modify files, execute commands, run tests, and int
 
 ## Project Status
 
-This repository is a work in progress. The introduction and meta-prompting modules, including their assessments, are available now, together with the first eleven spec-driven development lessons. Additional course material will be added over time.
+This repository is a work in progress. The introduction, meta-prompting, and spec-driven development modules, including their assessments, are available now. Additional course material will be added over time.
