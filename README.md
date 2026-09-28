@@ -115,6 +115,7 @@ The Introduction to Subagents section also contains a structured [curriculum](04
 | Lesson | Full material | Short version |
 | --- | --- | --- |
 | 1. Introduction to AI development frameworks | [When Frameworks Help and When They Do Not](04%20Context%20Engineering/04%20Frameworks/01%20Introduction%20to%20Frameworks/01%20Introduction%20to%20Frameworks.md) | [Summary](04%20Context%20Engineering/04%20Frameworks/01%20Introduction%20to%20Frameworks/01%20Introduction%20to%20Frameworks%20-%20Summary.md) |
+| 2. Task Master AI | [Lesson](04%20Context%20Engineering/04%20Frameworks/02%20Task-Master%20AI/02%20Task-Master%20AI.md) | [Summary](04%20Context%20Engineering/04%20Frameworks/02%20Task-Master%20AI/02%20Task-Master%20AI%20-%20Summary.md) |
 
 ## How to Use This Repository
 
@@ -176,7 +177,8 @@ Course_AI_for_developers/
     │   │   └── Introduction to subagents/
     │   └── 02 Claude Code Agent Teams/
     └── 04 Frameworks/
-        └── 01 Introduction to Frameworks/
+        ├── 01 Introduction to Frameworks/
+        └── 02 Task-Master AI/
 ```
 
 Full lessons and summaries are stored separately. Images and other reference files are kept next to the Markdown documents that use them.
@@ -187,4 +189,4 @@ AI coding agents can read and modify files, execute commands, run tests, and int
 
 ## Project Status
 
-This repository is a work in progress. The introduction, meta-prompting, and spec-driven development modules, including their assessments, are available now, together with the first nine general-practices lessons in context engineering, the complete Introduction to Agent Skills and Introduction to Subagents external courses, the Claude Code Agent Teams lesson, and the introduction to AI development frameworks. Additional course material will be added over time.
+This repository is a work in progress. The introduction, meta-prompting, and spec-driven development modules, including their assessments, are available now, together with the first nine general-practices lessons in context engineering, the complete Introduction to Agent Skills and Introduction to Subagents external courses, the Claude Code Agent Teams lesson, and the first two framework lessons covering framework selection and Task Master AI. Additional course material will be added over time.
