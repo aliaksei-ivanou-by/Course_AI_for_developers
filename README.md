@@ -70,6 +70,7 @@ The Claude Code 101 section also contains structured notes for every lesson. See
 | 5. Deriving a constitution from an existing project | [Brownfield Spec Kit Adoption](03%20Spec-Driven%20Development/05%20SpecKit%20Constitution%20-%20Brownfield/05%20SpecKit%20Constitution%20-%20Brownfield.md) | [Summary](03%20Spec-Driven%20Development/05%20SpecKit%20Constitution%20-%20Brownfield/05%20SpecKit%20Constitution%20-%20Brownfield%20-%20Summary.md) |
 | 6. Creating the first feature specification | [Spec Kit Specify](03%20Spec-Driven%20Development/06%20SpecKit%20Specify/06%20SpecKit%20Specify.md) | [Summary](03%20Spec-Driven%20Development/06%20SpecKit%20Specify/06%20SpecKit%20Specify%20-%20Summary.md) |
 | 7. Clarifying the feature specification | [Spec Kit Clarify](03%20Spec-Driven%20Development/07%20SpecKit%20Clarify/07%20SpecKit%20Clarify.md) | [Summary](03%20Spec-Driven%20Development/07%20SpecKit%20Clarify/07%20SpecKit%20Clarify%20-%20Summary.md) |
+| 8. Creating the technical implementation plan | [Spec Kit Plan](03%20Spec-Driven%20Development/08%20SpecKit%20Plan/08%20SpecKit%20Plan.md) | [Summary](03%20Spec-Driven%20Development/08%20SpecKit%20Plan/08%20SpecKit%20Plan%20-%20Summary.md) |
 
 ## How to Use This Repository
 
@@ -106,7 +107,8 @@ Course_AI_for_developers/
     ├── 04 SpecKit Constitution - Non-Interactive/
     ├── 05 SpecKit Constitution - Brownfield/
     ├── 06 SpecKit Specify/
-    └── 07 SpecKit Clarify/
+    ├── 07 SpecKit Clarify/
+    └── 08 SpecKit Plan/
 ```
 
 Full lessons and summaries are stored separately. Images and other reference files are kept next to the Markdown documents that use them.
@@ -117,4 +119,4 @@ AI coding agents can read and modify files, execute commands, run tests, and int
 
 ## Project Status
 
-This repository is a work in progress. The introduction and meta-prompting modules, including their assessments, are available now, together with the first seven spec-driven development lessons. Additional course material will be added over time.
+This repository is a work in progress. The introduction and meta-prompting modules, including their assessments, are available now, together with the first eight spec-driven development lessons. Additional course material will be added over time.
