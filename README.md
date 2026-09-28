@@ -92,6 +92,14 @@ The Claude Code 101 section also contains structured notes for every lesson. See
 | 8. Introduction to codebase indexing | [Codebase Indexing for AI Agents](04%20Context%20Engineering/01%20General%20practices/08%20Intro%20to%20codebase%20indexing/08%20Intro%20to%20codebase%20indexing.md) | [Summary](04%20Context%20Engineering/01%20General%20practices/08%20Intro%20to%20codebase%20indexing/08%20Intro%20to%20codebase%20indexing%20-%20Summary.md) |
 | 9. Consolidated context-engineering article | [Context Engineering for AI-Assisted Development](04%20Context%20Engineering/01%20General%20practices/09%20All%20of%20above%20lessons%20as%20a%20text%20article/09%20All%20of%20above%20lessons%20as%20a%20text%20article.md) | [Summary](04%20Context%20Engineering/01%20General%20practices/09%20All%20of%20above%20lessons%20as%20a%20text%20article/09%20All%20of%20above%20lessons%20as%20a%20text%20article%20-%20Summary.md) |
 
+#### Agent Skills
+
+| Lesson | Full material | Short version |
+| --- | --- | --- |
+| 1. External course: Introduction to Agent Skills | [Course overview](04%20Context%20Engineering/02%20Agent%20Skills/01%20External%20Course%20Intro%20to%20Agent%20Skills/01%20External%20Course%20Intro%20to%20Agent%20Skills.md) | [Summary](04%20Context%20Engineering/02%20Agent%20Skills/01%20External%20Course%20Intro%20to%20Agent%20Skills/01%20External%20Course%20Intro%20to%20Agent%20Skills%20-%20Summary.md) |
+
+The Introduction to Agent Skills section also contains a structured [curriculum](04%20Context%20Engineering/02%20Agent%20Skills/01%20External%20Course%20Intro%20to%20Agent%20Skills/Introduction%20to%20agent%20skills/Curriculum.md) and an [About the Course](04%20Context%20Engineering/02%20Agent%20Skills/01%20External%20Course%20Intro%20to%20Agent%20Skills/Introduction%20to%20agent%20skills/About%20course.md) page.
+
 ## How to Use This Repository
 
 1. Follow the numbered modules and lessons in order.
@@ -134,16 +142,18 @@ Course_AI_for_developers/
     ├── 11 SpecKit - Post-MVP/
     └── 12 SpecKit Quiz/
 └── 04 Context Engineering/
-    └── 01 General practices/
-        ├── 01 Generating the agent instructions/
-        ├── 02 Configuring the Statusline/
-        ├── 03 Context window - Caching and Price/
-        ├── 04 Context Window - Performance/
-        ├── 05 Dividing tasks by sessions/
-        ├── 06 Reducing the number of MCP servers/
-        ├── 07 Providing AI with up-to-date knowledge/
-        ├── 08 Intro to codebase indexing/
-        └── 09 All of above lessons as a text article/
+    ├── 01 General practices/
+    │   ├── 01 Generating the agent instructions/
+    │   ├── 02 Configuring the Statusline/
+    │   ├── 03 Context window - Caching and Price/
+    │   ├── 04 Context Window - Performance/
+    │   ├── 05 Dividing tasks by sessions/
+    │   ├── 06 Reducing the number of MCP servers/
+    │   ├── 07 Providing AI with up-to-date knowledge/
+    │   ├── 08 Intro to codebase indexing/
+    │   └── 09 All of above lessons as a text article/
+    └── 02 Agent Skills/
+        └── 01 External Course Intro to Agent Skills/
 ```
 
 Full lessons and summaries are stored separately. Images and other reference files are kept next to the Markdown documents that use them.
@@ -154,4 +164,4 @@ AI coding agents can read and modify files, execute commands, run tests, and int
 
 ## Project Status
 
-This repository is a work in progress. The introduction, meta-prompting, and spec-driven development modules, including their assessments, are available now, together with the first nine context-engineering lessons. Additional course material will be added over time.
+This repository is a work in progress. The introduction, meta-prompting, and spec-driven development modules, including their assessments, are available now, together with the first nine general-practices lessons in context engineering and the first Agent Skills lesson. Additional course material will be added over time.

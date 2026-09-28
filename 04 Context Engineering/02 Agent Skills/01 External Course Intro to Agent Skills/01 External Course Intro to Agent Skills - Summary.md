@@ -1,0 +1,3 @@
+# Summary: External Course — Introduction to Agent Skills
+
+Anthropic's one-hour Introduction to Agent Skills course contains six lessons about creating reusable Skill packages for Claude Code. It covers valid `SKILL.md` frontmatter, reliable descriptions, `allowed-tools`, progressive disclosure, reference files, executable scripts, choosing between Skills and other Claude Code features, team distribution, and troubleshooting with the skills validator and `claude --debug`. The core ideas are also applicable to other agents that support the Agent Skills standard or a comparable skill system. Review third-party Skills as carefully as other executable software before enabling them.
