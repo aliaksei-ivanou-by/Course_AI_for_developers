@@ -100,6 +100,14 @@ The Claude Code 101 section also contains structured notes for every lesson. See
 
 The Introduction to Agent Skills section also contains a structured [curriculum](04%20Context%20Engineering/02%20Agent%20Skills/01%20External%20Course%20Intro%20to%20Agent%20Skills/Introduction%20to%20agent%20skills/Curriculum.md) and an [About the Course](04%20Context%20Engineering/02%20Agent%20Skills/01%20External%20Course%20Intro%20to%20Agent%20Skills/Introduction%20to%20agent%20skills/About%20course.md) page.
 
+#### Subagents
+
+| Lesson | Full material | Short version |
+| --- | --- | --- |
+| 1. External course: Introduction to Subagents | [Course overview](04%20Context%20Engineering/03%20Sub-Agents/01%20External%20Course%20Introduction%20to%20subagents/01%20External%20Course%20Introduction%20to%20subagents.md) | [Summary](04%20Context%20Engineering/03%20Sub-Agents/01%20External%20Course%20Introduction%20to%20subagents/01%20External%20Course%20Introduction%20to%20subagents%20-%20Summary.md) |
+
+The Introduction to Subagents section also contains a structured [curriculum](04%20Context%20Engineering/03%20Sub-Agents/01%20External%20Course%20Introduction%20to%20subagents/Introduction%20to%20subagents/Curriculum.md) and an [About the Course](04%20Context%20Engineering/03%20Sub-Agents/01%20External%20Course%20Introduction%20to%20subagents/Introduction%20to%20subagents/About%20course.md) page.
+
 ## How to Use This Repository
 
 1. Follow the numbered modules and lessons in order.
@@ -152,9 +160,12 @@ Course_AI_for_developers/
     │   ├── 07 Providing AI with up-to-date knowledge/
     │   ├── 08 Intro to codebase indexing/
     │   └── 09 All of above lessons as a text article/
-    └── 02 Agent Skills/
-        └── 01 External Course Intro to Agent Skills/
-            └── Introduction to agent skills/
+    ├── 02 Agent Skills/
+    │   └── 01 External Course Intro to Agent Skills/
+    │       └── Introduction to agent skills/
+    └── 03 Sub-Agents/
+        └── 01 External Course Introduction to subagents/
+            └── Introduction to subagents/
 ```
 
 Full lessons and summaries are stored separately. Images and other reference files are kept next to the Markdown documents that use them.
@@ -165,4 +176,4 @@ AI coding agents can read and modify files, execute commands, run tests, and int
 
 ## Project Status
 
-This repository is a work in progress. The introduction, meta-prompting, and spec-driven development modules, including their assessments, are available now, together with the first nine general-practices lessons in context engineering and the complete six-lesson Introduction to Agent Skills external course. Additional course material will be added over time.
+This repository is a work in progress. The introduction, meta-prompting, and spec-driven development modules, including their assessments, are available now, together with the first nine general-practices lessons in context engineering, the complete six-lesson Introduction to Agent Skills external course, and the Introduction to Subagents external-course overview. Additional course material will be added over time.

@@ -1,0 +1,3 @@
+# Summary: External Course — Introduction to Subagents
+
+Anthropic's 45-minute Introduction to Subagents course contains four lessons about delegating focused work to assistants with isolated context windows. It covers how information flows between the main conversation and a subagent, creating custom subagents, designing reliable instructions with structured output and obstacle reporting, limiting tool access, choosing effective delegation scenarios, parallelizing work, and avoiding common anti-patterns. The course uses Claude Code, while its core principles also apply to other agent systems that support isolated delegated workers.
