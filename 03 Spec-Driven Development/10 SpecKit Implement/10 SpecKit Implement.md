@@ -372,60 +372,11 @@ If new tasks are appended, review them, run `implement` again for that work, val
 
 Convergence is an additional automated check. It does not replace code review, product acceptance, security review, or CI.
 
-## Commit, Publish, and Merge Deliberately
+## Hand Off to the Post-MVP Workflow
 
-The transcript initializes Git after implementation and then creates and pushes a public repository. In a production workflow, establish version control and repository visibility before broad implementation whenever possible.
+Once implementation and convergence are complete, the feature still needs deliberate source-control review, publication decisions, and product acceptance. A future behavior such as camera navigation should begin a new feature cycle rather than being added casually to the completed MVP.
 
-Before committing:
-
-1. Confirm that the repository root is correct.
-2. Review every changed and untracked file.
-3. Verify ignore rules and remove generated artifacts from the commit.
-4. Scan for secrets, private URLs, credentials, personal data, and proprietary material.
-5. Run required formatting, tests, builds, and security checks.
-6. Confirm that `tasks.md` accurately reflects verified work.
-7. Run `converge` and review its outcome.
-8. Create a focused commit with a meaningful message.
-
-Before publishing:
-
-- Confirm whether the remote repository must be private or may be public.
-- Verify the remote URL and destination account.
-- Do not push secrets merely because they have already been committed locally.
-- Follow the team's branch-protection, review, CI, signing, and licensing requirements.
-- Open a pull request and obtain required review before merging to the protected main branch.
-
-`git init`, creating a remote, pushing, and merging are separate state-changing actions. An implementation command should not assume authorization for all of them.
-
-## Start the Next Feature
-
-After the MVP is accepted and integrated, a new behavior such as middle-mouse camera control begins another feature cycle:
-
-```text
-constitution remains in force
-        ↓
-specify the camera-control behavior
-        ↓
-clarify ambiguous interactions
-        ↓
-plan the technical change
-        ↓
-generate and analyze tasks
-        ↓
-implement and converge
-```
-
-Example specification prompt:
-
-```text
-/speckit-specify
-
-Add constrained camera navigation to the desktop modeling workspace. Define
-middle-mouse panning, wheel zoom, boundary behavior, cancellation, and interaction
-with active drawing. Preserve the existing drawing controls and project data.
-```
-
-Describe user-visible behavior at `specify`; leave input-system APIs and engine implementation details for `plan`.
+The next lesson, [Adding a New Feature after the MVP](../11%20SpecKit%20-%20Post-MVP/11%20SpecKit%20-%20Post-MVP.md), covers the complete second iteration: specifying camera navigation against an existing codebase, clarifying its interaction model, repeating the planning and implementation stages, validating regressions, and delivering the change through a pull request.
 
 ## Common Mistakes
 
