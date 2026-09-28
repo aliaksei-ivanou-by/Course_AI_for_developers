@@ -76,6 +76,14 @@ The Claude Code 101 section also contains structured notes for every lesson. See
 | 11. Adding a new feature after the MVP | [Spec Kit Post-MVP](03%20Spec-Driven%20Development/11%20SpecKit%20-%20Post-MVP/11%20SpecKit%20-%20Post-MVP.md) | [Summary](03%20Spec-Driven%20Development/11%20SpecKit%20-%20Post-MVP/11%20SpecKit%20-%20Post-MVP%20-%20Summary.md) |
 | 12. Module assessment | [GitHub Spec Kit Quiz](03%20Spec-Driven%20Development/12%20SpecKit%20Quiz/12%20SpecKit%20Quiz.md) | — |
 
+### Module 04 — Context Engineering
+
+#### General Practices
+
+| Lesson | Full material | Short version |
+| --- | --- | --- |
+| 1. Generating project instructions | [Generating Project Instructions for Coding Agents](04%20Context%20Engineering/01%20General%20practices/01%20Generating%20the%20agent%20instructions/01%20Generating%20the%20agent%20instructions.md) | [Summary](04%20Context%20Engineering/01%20General%20practices/01%20Generating%20the%20agent%20instructions/01%20Generating%20the%20agent%20instructions%20-%20Summary.md) |
+
 ## How to Use This Repository
 
 1. Follow the numbered modules and lessons in order.
@@ -104,7 +112,7 @@ Course_AI_for_developers/
 │   ├── 04 Meta-Prompting with NotebookLM/
 │   ├── 05 Creating your first Product Requirement Document/
 │   └── 06 Structured Prompts Quiz/
-└── 03 Spec-Driven Development/
+├── 03 Spec-Driven Development/
     ├── 01 GitHub SpecKit Brief Overview/
     ├── 02 Installing SpecKit/
     ├── 03 SpecKit Constitution - Interactive/
@@ -117,6 +125,9 @@ Course_AI_for_developers/
     ├── 10 SpecKit Implement/
     ├── 11 SpecKit - Post-MVP/
     └── 12 SpecKit Quiz/
+└── 04 Context Engineering/
+    └── 01 General practices/
+        └── 01 Generating the agent instructions/
 ```
 
 Full lessons and summaries are stored separately. Images and other reference files are kept next to the Markdown documents that use them.
@@ -127,4 +138,4 @@ AI coding agents can read and modify files, execute commands, run tests, and int
 
 ## Project Status
 
-This repository is a work in progress. The introduction, meta-prompting, and spec-driven development modules, including their assessments, are available now. Additional course material will be added over time.
+This repository is a work in progress. The introduction, meta-prompting, and spec-driven development modules, including their assessments, are available now, together with the first context-engineering lesson. Additional course material will be added over time.
