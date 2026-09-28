@@ -67,6 +67,7 @@ The Claude Code 101 section also contains structured notes for every lesson. See
 | 2. Installing GitHub Spec Kit | [Installing GitHub Spec Kit](03%20Spec-Driven%20Development/02%20Installing%20SpecKit/02%20Installing%20SpecKit.md) | [Summary](03%20Spec-Driven%20Development/02%20Installing%20SpecKit/02%20Installing%20SpecKit%20-%20Summary.md) |
 | 3. Creating a project constitution interactively | [Creating a Spec Kit Constitution Interactively](03%20Spec-Driven%20Development/03%20SpecKit%20Constitution%20-%20Interactive/03%20SpecKit%20Constitution%20-%20Interactive.md) | [Summary](03%20Spec-Driven%20Development/03%20SpecKit%20Constitution%20-%20Interactive/03%20SpecKit%20Constitution%20-%20Interactive%20-%20Summary.md) |
 | 4. Creating a project constitution non-interactively | [Creating a Spec Kit Constitution Non-Interactively](03%20Spec-Driven%20Development/04%20SpecKit%20Constitution%20-%20Non-Interactive/04%20SpecKit%20Constitution%20-%20Non-Interactive.md) | [Summary](03%20Spec-Driven%20Development/04%20SpecKit%20Constitution%20-%20Non-Interactive/04%20SpecKit%20Constitution%20-%20Non-Interactive%20-%20Summary.md) |
+| 5. Deriving a constitution from an existing project | [Brownfield Spec Kit Adoption](03%20Spec-Driven%20Development/05%20SpecKit%20Constitution%20-%20Brownfield/05%20SpecKit%20Constitution%20-%20Brownfield.md) | [Summary](03%20Spec-Driven%20Development/05%20SpecKit%20Constitution%20-%20Brownfield/05%20SpecKit%20Constitution%20-%20Brownfield%20-%20Summary.md) |
 
 ## How to Use This Repository
 
@@ -100,7 +101,8 @@ Course_AI_for_developers/
     ├── 01 GitHub SpecKit Brief Overview/
     ├── 02 Installing SpecKit/
     ├── 03 SpecKit Constitution - Interactive/
-    └── 04 SpecKit Constitution - Non-Interactive/
+    ├── 04 SpecKit Constitution - Non-Interactive/
+    └── 05 SpecKit Constitution - Brownfield/
 ```
 
 Full lessons and summaries are stored separately. Images and other reference files are kept next to the Markdown documents that use them.
@@ -111,4 +113,4 @@ AI coding agents can read and modify files, execute commands, run tests, and int
 
 ## Project Status
 
-This repository is a work in progress. The introduction and meta-prompting modules, including their assessments, are available now, together with the first four spec-driven development lessons. Additional course material will be added over time.
+This repository is a work in progress. The introduction and meta-prompting modules, including their assessments, are available now, together with the first five spec-driven development lessons. Additional course material will be added over time.
