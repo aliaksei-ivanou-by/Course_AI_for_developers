@@ -14,10 +14,7 @@ The course contains four lessons and takes 45 minutes to complete.
 
 ### 3. Designing Effective Subagents
 
-1. Keeping responsibilities narrow and explicit
-2. Requiring structured output formats
-3. Reporting obstacles and incomplete work
-4. Restricting tool access
+1. [Designing Effective Subagents](03%20Designing%20effective%20subagents/03%20Designing%20effective%20subagents.md)
 
 ### 4. Using Subagents Effectively
 
