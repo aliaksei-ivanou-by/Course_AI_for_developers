@@ -1,0 +1,7 @@
+# Summary: Reducing MCP Server and Tool Context Overhead
+
+MCP integrations can add server descriptions, tool schemas, instructions, call arguments, and results to an agent's context. The cost depends on the client and configuration: eager loading exposes definitions immediately, while deferred loading or tool search can load detailed schemas only when needed. A connected server therefore does not always mean that all of its tools occupy every prompt.
+
+Keep a task-specific capability set, allowlist relevant tools, bound returned data, and measure task quality, latency, token use, and cost instead of treating one observed token count as a universal rule. Use a CLI for stable direct operations with reliable machine-readable output; prefer MCP when structured discovery, typed inputs, portability, or shared remote integrations justify it. Native tools and hybrid setups are also valid. Skills can progressively disclose CLI instructions, while tools such as Context7's `ctx7` and the third-party MCPorter illustrate how MCP-backed capabilities may be exposed through a command-line workflow.
+
+CLI use shifts rather than eliminates overhead and risk: command instructions and output still enter context, while shell injection and credential exposure require controls. MCP has its own trust and permission risks. Whichever interface is selected, use trusted sources, least privilege, explicit confirmation for consequential actions, concise complete descriptions, and bounded outputs.
