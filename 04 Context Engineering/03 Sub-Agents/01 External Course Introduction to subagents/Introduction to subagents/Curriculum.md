@@ -18,10 +18,7 @@ The course contains four lessons and takes 45 minutes to complete.
 
 ### 4. Using Subagents Effectively
 
-1. Choosing appropriate delegation scenarios
-2. Decomposing and parallelizing complex tasks
-3. Coordinating results from the main conversation
-4. Avoiding common subagent anti-patterns
+1. [Using Subagents Effectively](04%20Using%20subagents%20effectively/04%20Using%20subagents%20effectively.md)
 
 ## Course Information
 
