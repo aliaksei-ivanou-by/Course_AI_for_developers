@@ -72,6 +72,7 @@ The Claude Code 101 section also contains structured notes for every lesson. See
 | 7. Clarifying the feature specification | [Spec Kit Clarify](03%20Spec-Driven%20Development/07%20SpecKit%20Clarify/07%20SpecKit%20Clarify.md) | [Summary](03%20Spec-Driven%20Development/07%20SpecKit%20Clarify/07%20SpecKit%20Clarify%20-%20Summary.md) |
 | 8. Creating the technical implementation plan | [Spec Kit Plan](03%20Spec-Driven%20Development/08%20SpecKit%20Plan/08%20SpecKit%20Plan.md) | [Summary](03%20Spec-Driven%20Development/08%20SpecKit%20Plan/08%20SpecKit%20Plan%20-%20Summary.md) |
 | 9. Generating the implementation task list | [Spec Kit Tasks](03%20Spec-Driven%20Development/09%20SpecKit%20Tasks/09%20SpecKit%20Tasks.md) | [Summary](03%20Spec-Driven%20Development/09%20SpecKit%20Tasks/09%20SpecKit%20Tasks%20-%20Summary.md) |
+| 10. Executing and validating the implementation | [Spec Kit Implement](03%20Spec-Driven%20Development/10%20SpecKit%20Implement/10%20SpecKit%20Implement.md) | [Summary](03%20Spec-Driven%20Development/10%20SpecKit%20Implement/10%20SpecKit%20Implement%20-%20Summary.md) |
 
 ## How to Use This Repository
 
@@ -110,7 +111,8 @@ Course_AI_for_developers/
     ├── 06 SpecKit Specify/
     ├── 07 SpecKit Clarify/
     ├── 08 SpecKit Plan/
-    └── 09 SpecKit Tasks/
+    ├── 09 SpecKit Tasks/
+    └── 10 SpecKit Implement/
 ```
 
 Full lessons and summaries are stored separately. Images and other reference files are kept next to the Markdown documents that use them.
@@ -121,4 +123,4 @@ AI coding agents can read and modify files, execute commands, run tests, and int
 
 ## Project Status
 
-This repository is a work in progress. The introduction and meta-prompting modules, including their assessments, are available now, together with the first nine spec-driven development lessons. Additional course material will be added over time.
+This repository is a work in progress. The introduction and meta-prompting modules, including their assessments, are available now, together with the first ten spec-driven development lessons. Additional course material will be added over time.
