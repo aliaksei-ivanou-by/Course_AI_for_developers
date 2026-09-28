@@ -86,6 +86,7 @@ The Claude Code 101 section also contains structured notes for every lesson. See
 | 2. Monitoring context and token usage | [Configuring the Status Line](04%20Context%20Engineering/01%20General%20practices/02%20Configuring%20the%20Statusline/02%20Configuring%20the%20Statusline.md) | [Summary](04%20Context%20Engineering/01%20General%20practices/02%20Configuring%20the%20Statusline/02%20Configuring%20the%20Statusline%20-%20Summary.md) |
 | 3. Context caching, cost, and performance | [Context Windows, Prompt Caching, Cost, and Performance](04%20Context%20Engineering/01%20General%20practices/03%20Context%20window%20-%20Caching%20and%20Price/03%20Context%20window%20-%20Caching%20and%20Price.md) | [Summary](04%20Context%20Engineering/01%20General%20practices/03%20Context%20window%20-%20Caching%20and%20Price/03%20Context%20window%20-%20Caching%20and%20Price%20-%20Summary.md) |
 | 4. Context size and model performance | [Context Window Size and Model Performance](04%20Context%20Engineering/01%20General%20practices/04%20Context%20Window%20-%20Performance/04%20Context%20Window%20-%20Performance.md) | [Summary](04%20Context%20Engineering/01%20General%20practices/04%20Context%20Window%20-%20Performance/04%20Context%20Window%20-%20Performance%20-%20Summary.md) |
+| 5. Dividing work across sessions | [One Task, One Chat](04%20Context%20Engineering/01%20General%20practices/05%20Dividing%20tasks%20by%20sessions/05%20Dividing%20tasks%20by%20sessions.md) | [Summary](04%20Context%20Engineering/01%20General%20practices/05%20Dividing%20tasks%20by%20sessions/05%20Dividing%20tasks%20by%20sessions%20-%20Summary.md) |
 
 ## How to Use This Repository
 
@@ -133,7 +134,8 @@ Course_AI_for_developers/
         ├── 01 Generating the agent instructions/
         ├── 02 Configuring the Statusline/
         ├── 03 Context window - Caching and Price/
-        └── 04 Context Window - Performance/
+        ├── 04 Context Window - Performance/
+        └── 05 Dividing tasks by sessions/
 ```
 
 Full lessons and summaries are stored separately. Images and other reference files are kept next to the Markdown documents that use them.
@@ -144,4 +146,4 @@ AI coding agents can read and modify files, execute commands, run tests, and int
 
 ## Project Status
 
-This repository is a work in progress. The introduction, meta-prompting, and spec-driven development modules, including their assessments, are available now, together with the first four context-engineering lessons. Additional course material will be added over time.
+This repository is a work in progress. The introduction, meta-prompting, and spec-driven development modules, including their assessments, are available now, together with the first five context-engineering lessons. Additional course material will be added over time.
