@@ -18,10 +18,7 @@ The course contains six lessons and takes approximately one hour to complete.
 
 ### 4. Skills vs. Other Claude Code Features
 
-1. Skills vs. `CLAUDE.md`
-2. Skills vs. subagents
-3. Skills vs. hooks
-4. Skills vs. MCP servers
+1. [Skills vs. Other Claude Code Features](04%20Skills%20vs.%20other%20Claude%20Code%20features/04%20Skills%20vs.%20other%20Claude%20Code%20features.md)
 
 ### 5. Sharing Skills
 
