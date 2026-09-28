@@ -6,10 +6,7 @@ The course contains four lessons and takes 45 minutes to complete.
 
 ### 1. What Are Subagents?
 
-1. Separate context windows and delegated work
-2. Inputs passed from the main conversation
-3. Results and summaries returned to the parent agent
-4. Context-management benefits and tradeoffs
+1. [What Are Subagents?](01%20What%20are%20subagents/01%20What%20are%20subagents.md)
 
 ### 2. Creating a Subagent
 
