@@ -84,6 +84,7 @@ The Claude Code 101 section also contains structured notes for every lesson. See
 | --- | --- | --- |
 | 1. Generating project instructions | [Generating Project Instructions for Coding Agents](04%20Context%20Engineering/01%20General%20practices/01%20Generating%20the%20agent%20instructions/01%20Generating%20the%20agent%20instructions.md) | [Summary](04%20Context%20Engineering/01%20General%20practices/01%20Generating%20the%20agent%20instructions/01%20Generating%20the%20agent%20instructions%20-%20Summary.md) |
 | 2. Monitoring context and token usage | [Configuring the Status Line](04%20Context%20Engineering/01%20General%20practices/02%20Configuring%20the%20Statusline/02%20Configuring%20the%20Statusline.md) | [Summary](04%20Context%20Engineering/01%20General%20practices/02%20Configuring%20the%20Statusline/02%20Configuring%20the%20Statusline%20-%20Summary.md) |
+| 3. Context caching, cost, and performance | [Context Windows, Prompt Caching, Cost, and Performance](04%20Context%20Engineering/01%20General%20practices/03%20Context%20window%20-%20Caching%20and%20Price/03%20Context%20window%20-%20Caching%20and%20Price.md) | [Summary](04%20Context%20Engineering/01%20General%20practices/03%20Context%20window%20-%20Caching%20and%20Price/03%20Context%20window%20-%20Caching%20and%20Price%20-%20Summary.md) |
 
 ## How to Use This Repository
 
@@ -129,7 +130,8 @@ Course_AI_for_developers/
 └── 04 Context Engineering/
     └── 01 General practices/
         ├── 01 Generating the agent instructions/
-        └── 02 Configuring the Statusline/
+        ├── 02 Configuring the Statusline/
+        └── 03 Context window - Caching and Price/
 ```
 
 Full lessons and summaries are stored separately. Images and other reference files are kept next to the Markdown documents that use them.
@@ -140,4 +142,4 @@ AI coding agents can read and modify files, execute commands, run tests, and int
 
 ## Project Status
 
-This repository is a work in progress. The introduction, meta-prompting, and spec-driven development modules, including their assessments, are available now, together with the first two context-engineering lessons. Additional course material will be added over time.
+This repository is a work in progress. The introduction, meta-prompting, and spec-driven development modules, including their assessments, are available now, together with the first three context-engineering lessons. Additional course material will be added over time.
