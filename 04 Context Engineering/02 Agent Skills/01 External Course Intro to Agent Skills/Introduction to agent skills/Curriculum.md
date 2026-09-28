@@ -22,10 +22,7 @@ The course contains six lessons and takes approximately one hour to complete.
 
 ### 5. Sharing Skills
 
-1. Sharing Skills through project repositories
-2. Distributing Skills through plugins
-3. Deploying Skills with enterprise managed settings
-4. Using Skills with custom subagents
+1. [Sharing Skills](05%20Sharing%20skills/05%20Sharing%20skills.md)
 
 ### 6. Troubleshooting Skills
 
