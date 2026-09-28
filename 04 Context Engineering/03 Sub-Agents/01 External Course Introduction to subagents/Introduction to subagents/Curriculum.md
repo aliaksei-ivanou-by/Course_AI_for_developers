@@ -10,10 +10,7 @@ The course contains four lessons and takes 45 minutes to complete.
 
 ### 2. Creating a Subagent
 
-1. Creating personal and project subagents
-2. Defining instructions, descriptions, tools, and scope
-3. Building code-review and documentation workflows
-4. Invoking a subagent for a task
+1. [Creating a Subagent](02%20Creating%20a%20subagent/02%20Creating%20a%20subagent.md)
 
 ### 3. Designing Effective Subagents
 
