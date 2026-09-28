@@ -59,13 +59,19 @@ The Claude Code 101 section also contains structured notes for every lesson. See
 | 5. Creating your first PRD | [PRD Generation with AI Dev Tasks](02%20Meta-Prompting/05%20Creating%20your%20first%20Product%20Requirement%20Document/05%20Creating%20your%20first%20Product%20Requirement%20Document.md) | [Summary](02%20Meta-Prompting/05%20Creating%20your%20first%20Product%20Requirement%20Document/05%20Creating%20your%20first%20Product%20Requirement%20Document%20-%20Summary.md) |
 | 6. Module assessment | [Structured Prompts Quiz](02%20Meta-Prompting/06%20Structured%20Prompts%20Quiz/06%20Structured%20Prompts%20Quiz.md) | — |
 
+### Module 03 — Spec-Driven Development
+
+| Lesson | Full material | Short version |
+| --- | --- | --- |
+| 1. GitHub Spec Kit overview | [GitHub Spec Kit Process Flow](03%20Spec-Driven%20Development/01%20GitHub%20SpecKit%20Brief%20Overview/01%20GitHub%20SpecKit%20Brief%20Overview.md) | [Summary](03%20Spec-Driven%20Development/01%20GitHub%20SpecKit%20Brief%20Overview/01%20GitHub%20SpecKit%20Brief%20Overview%20-%20Summary.md) |
+
 ## How to Use This Repository
 
 1. Follow the numbered modules and lessons in order.
 2. Read the full lesson when studying a topic for the first time.
 3. Use the separate summary files for quick review.
 4. Follow the linked external materials when a lesson includes them.
-5. Complete the quiz after finishing the introduction module.
+5. Complete each available module quiz after finishing its lessons.
 6. Verify time-sensitive product information against official documentation before applying it to production work.
 
 ## Repository Structure
@@ -80,13 +86,15 @@ Course_AI_for_developers/
 │   ├── 03 Our Toolset as for Now/
 │   ├── 04 Using MCP Servers/
 │   └── 05 Intro Quiz/
-└── 02 Meta-Prompting/
-    ├── 01 Structuring Prompts (Prompt Engineering in a Nutshell)/
-    ├── 02 Context-Aware Prompt Enhancement with Augment Code/
-    ├── 03 Tool-Agnostic Meta-Prompting/
-    ├── 04 Meta-Prompting with NotebookLM/
-    ├── 05 Creating your first Product Requirement Document/
-    └── 06 Structured Prompts Quiz/
+├── 02 Meta-Prompting/
+│   ├── 01 Structuring Prompts (Prompt Engineering in a Nutshell)/
+│   ├── 02 Context-Aware Prompt Enhancement with Augment Code/
+│   ├── 03 Tool-Agnostic Meta-Prompting/
+│   ├── 04 Meta-Prompting with NotebookLM/
+│   ├── 05 Creating your first Product Requirement Document/
+│   └── 06 Structured Prompts Quiz/
+└── 03 Spec-Driven Development/
+    └── 01 GitHub SpecKit Brief Overview/
 ```
 
 Full lessons and summaries are stored separately. Images and other reference files are kept next to the Markdown documents that use them.
@@ -97,4 +105,4 @@ AI coding agents can read and modify files, execute commands, run tests, and int
 
 ## Project Status
 
-This repository is a work in progress. The introduction module and the meta-prompting module, including their assessments, are available now. Additional course material will be added over time.
+This repository is a work in progress. The introduction and meta-prompting modules, including their assessments, are available now, together with the first spec-driven development lesson. Additional course material will be added over time.
