@@ -14,10 +14,7 @@ The course contains six lessons and takes approximately one hour to complete.
 
 ### 3. Configuration and Multi-File Skills
 
-1. Writing effective descriptions
-2. Restricting tool access with `allowed-tools`
-3. Organizing larger Skills with progressive disclosure
-4. Adding reference files and executable scripts
+1. [Configuration and Multi-File Skills](03%20Configuration%20and%20multi-file%20skills/03%20Configuration%20and%20multi-file%20skills.md)
 
 ### 4. Skills vs. Other Claude Code Features
 
