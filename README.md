@@ -128,6 +128,7 @@ The Introduction to Subagents section also contains a structured [curriculum](04
 | Lesson | Full material | Short version |
 | --- | --- | --- |
 | 1. What comes next | [Advanced Techniques: What Comes Next](05%20Advanced%20Techniques/01%20More%20will%20follow%20here/01%20More%20will%20follow%20here.md) | [Summary](05%20Advanced%20Techniques/01%20More%20will%20follow%20here/01%20More%20will%20follow%20here%20-%20Summary.md) |
+| 2. Current AI-assisted development level | [Where Are You Now in AI-Assisted Development?](05%20Advanced%20Techniques/02%20Let%20us%20know%20where%20are%20you%20now/02%20Let%20us%20know%20where%20are%20you%20now.md) | [Summary](05%20Advanced%20Techniques/02%20Let%20us%20know%20where%20are%20you%20now/02%20Let%20us%20know%20where%20are%20you%20now%20-%20Summary.md) |
 
 This optional module will expand with practical material on open-source models, open-source agent harnesses, and developing a repeatable AI-assisted engineering process.
 
@@ -195,7 +196,8 @@ Course_AI_for_developers/
         └── 02 Task-Master AI/
     └── 05 General Practices Quiz/
 └── 05 Advanced Techniques/
-    └── 01 More will follow here/
+    ├── 01 More will follow here/
+    └── 02 Let us know where are you now/
 ```
 
 Full lessons and summaries are stored separately. Images and other reference files are kept next to the Markdown documents that use them.
@@ -206,4 +208,4 @@ AI coding agents can read and modify files, execute commands, run tests, and int
 
 ## Project Status
 
-This repository is a work in progress. The introduction, meta-prompting, and spec-driven development modules, including their assessments, are available now, together with the first nine general-practices lessons and their assessment in context engineering, the complete Introduction to Agent Skills and Introduction to Subagents external courses, the Claude Code Agent Teams lesson, and the first two framework lessons covering framework selection and Task Master AI. The optional Advanced Techniques module has also started with an overview of planned material on open-source models, agent harnesses, and process design. Additional course material will be added over time.
+This repository is a work in progress. The introduction, meta-prompting, and spec-driven development modules, including their assessments, are available now, together with the first nine general-practices lessons and their assessment in context engineering, the complete Introduction to Agent Skills and Introduction to Subagents external courses, the Claude Code Agent Teams lesson, and the first two framework lessons covering framework selection and Task Master AI. The optional Advanced Techniques module has started with an overview of planned material and a reflection survey about the learner's current AI-assisted development workflow. Additional course material will be added over time.

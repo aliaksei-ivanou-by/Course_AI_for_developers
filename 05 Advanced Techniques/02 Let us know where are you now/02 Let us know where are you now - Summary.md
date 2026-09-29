@@ -1,0 +1,3 @@
+# Summary: Where Are You Now in AI-Assisted Development?
+
+Before continuing with advanced techniques, document how you currently use AI in software development: the tools and workflows you use, the tasks you delegate, the supervision and validation you provide, the constraints you face, and the capability you want to improve next. Submit this reflection through the linked course survey without including secrets or confidential project information. The AI-coding iceberg is a humorous discussion prompt, not an objective maturity scale; progress should be measured by reliable engineering outcomes rather than workflow complexity.
