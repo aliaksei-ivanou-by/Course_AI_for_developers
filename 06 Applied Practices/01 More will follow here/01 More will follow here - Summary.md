@@ -1,0 +1,3 @@
+# Summary: Applied Practices — What Comes Next
+
+The optional Applied Practices module will develop end-to-end case studies that combine the course's foundational techniques in realistic engineering scenarios. Each exercise should define its starting state, objective, constraints, execution steps, verification, evidence, and retrospective. Reproduce examples in a safe environment, grant only necessary permissions, verify current documentation, and apply normal testing, security, review, cost, and recovery controls. Judge an AI-assisted workflow by the correctness and maintainability of its completed result—not by how much work was automated.

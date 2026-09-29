@@ -133,6 +133,14 @@ The Introduction to Subagents section also contains a structured [curriculum](04
 
 This optional module will expand with practical material on open-source models, open-source agent harnesses, and developing a repeatable AI-assisted engineering process.
 
+### Module 06 — Applied Practices
+
+| Lesson | Full material | Short version |
+| --- | --- | --- |
+| 1. What comes next | [Applied Practices: What Comes Next](06%20Applied%20Practices/01%20More%20will%20follow%20here/01%20More%20will%20follow%20here.md) | [Summary](06%20Applied%20Practices/01%20More%20will%20follow%20here/01%20More%20will%20follow%20here%20-%20Summary.md) |
+
+This optional module will grow into a collection of end-to-end case studies focused on verified engineering outcomes.
+
 ## How to Use This Repository
 
 1. Follow the numbered modules and lessons in order.
@@ -196,10 +204,12 @@ Course_AI_for_developers/
         ├── 01 Introduction to Frameworks/
         └── 02 Task-Master AI/
     └── 05 General Practices Quiz/
-└── 05 Advanced Techniques/
+├── 05 Advanced Techniques/
     ├── 01 More will follow here/
     ├── 02 Let us know where are you now/
     └── 03 Using local LLM without powerful hardware/
+└── 06 Applied Practices/
+    └── 01 More will follow here/
 ```
 
 Full lessons and summaries are stored separately. Images and other reference files are kept next to the Markdown documents that use them.
@@ -210,4 +220,4 @@ AI coding agents can read and modify files, execute commands, run tests, and int
 
 ## Project Status
 
-This repository is a work in progress. The introduction, meta-prompting, and spec-driven development modules, including their assessments, are available now, together with the first nine general-practices lessons and their assessment in context engineering, the complete Introduction to Agent Skills and Introduction to Subagents external courses, the Claude Code Agent Teams lesson, and the first two framework lessons covering framework selection and Task Master AI. The optional Advanced Techniques module includes an overview of planned material, a learner reflection survey, and a practical introduction to evaluating open-weight models through OpenCode and hosted inference before investing in local hardware. Additional course material will be added over time.
+This repository is a work in progress. The introduction, meta-prompting, and spec-driven development modules, including their assessments, are available now, together with the first nine general-practices lessons and their assessment in context engineering, the complete Introduction to Agent Skills and Introduction to Subagents external courses, the Claude Code Agent Teams lesson, and the first two framework lessons covering framework selection and Task Master AI. The optional Advanced Techniques module includes an overview of planned material, a learner reflection survey, and a practical introduction to evaluating open-weight models through OpenCode and hosted inference before investing in local hardware. The Applied Practices module has also started with a guide to approaching future end-to-end case studies. Additional course material will be added over time.
