@@ -129,6 +129,7 @@ The Introduction to Subagents section also contains a structured [curriculum](04
 | --- | --- | --- |
 | 1. What comes next | [Advanced Techniques: What Comes Next](05%20Advanced%20Techniques/01%20More%20will%20follow%20here/01%20More%20will%20follow%20here.md) | [Summary](05%20Advanced%20Techniques/01%20More%20will%20follow%20here/01%20More%20will%20follow%20here%20-%20Summary.md) |
 | 2. Current AI-assisted development level | [Where Are You Now in AI-Assisted Development?](05%20Advanced%20Techniques/02%20Let%20us%20know%20where%20are%20you%20now/02%20Let%20us%20know%20where%20are%20you%20now.md) | [Summary](05%20Advanced%20Techniques/02%20Let%20us%20know%20where%20are%20you%20now/02%20Let%20us%20know%20where%20are%20you%20now%20-%20Summary.md) |
+| 3. Open-weight models without local GPU hardware | [Using Open-Weight Models Without Powerful Local Hardware](05%20Advanced%20Techniques/03%20Using%20local%20LLM%20without%20powerful%20hardware/03%20Using%20local%20LLM%20without%20powerful%20hardware.md) | [Summary](05%20Advanced%20Techniques/03%20Using%20local%20LLM%20without%20powerful%20hardware/03%20Using%20local%20LLM%20without%20powerful%20hardware%20-%20Summary.md) |
 
 This optional module will expand with practical material on open-source models, open-source agent harnesses, and developing a repeatable AI-assisted engineering process.
 
@@ -197,7 +198,8 @@ Course_AI_for_developers/
     └── 05 General Practices Quiz/
 └── 05 Advanced Techniques/
     ├── 01 More will follow here/
-    └── 02 Let us know where are you now/
+    ├── 02 Let us know where are you now/
+    └── 03 Using local LLM without powerful hardware/
 ```
 
 Full lessons and summaries are stored separately. Images and other reference files are kept next to the Markdown documents that use them.
@@ -208,4 +210,4 @@ AI coding agents can read and modify files, execute commands, run tests, and int
 
 ## Project Status
 
-This repository is a work in progress. The introduction, meta-prompting, and spec-driven development modules, including their assessments, are available now, together with the first nine general-practices lessons and their assessment in context engineering, the complete Introduction to Agent Skills and Introduction to Subagents external courses, the Claude Code Agent Teams lesson, and the first two framework lessons covering framework selection and Task Master AI. The optional Advanced Techniques module has started with an overview of planned material and a reflection survey about the learner's current AI-assisted development workflow. Additional course material will be added over time.
+This repository is a work in progress. The introduction, meta-prompting, and spec-driven development modules, including their assessments, are available now, together with the first nine general-practices lessons and their assessment in context engineering, the complete Introduction to Agent Skills and Introduction to Subagents external courses, the Claude Code Agent Teams lesson, and the first two framework lessons covering framework selection and Task Master AI. The optional Advanced Techniques module includes an overview of planned material, a learner reflection survey, and a practical introduction to evaluating open-weight models through OpenCode and hosted inference before investing in local hardware. Additional course material will be added over time.
