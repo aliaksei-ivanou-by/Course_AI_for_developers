@@ -1,0 +1,33 @@
+# Normalize line endings so a Windows-created archive/checkout never hands
+# Linux/WSL a CRLF shell script (observed real failure: CRLF shebangs break
+# `bash script.sh` with "bad interpreter"/syntax errors under Git Bash/WSL/CI).
+# Everything the accelerator ships is authored and consumed as LF; only
+# genuinely Windows-native script formats keep CRLF, since forcing LF onto
+# those breaks tools (older `cmd.exe`) that require CRLF line endings.
+
+* text=auto eol=lf
+
+*.sh   text eol=lf
+*.py   text eol=lf
+*.md   text eol=lf
+*.json text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.toml text eol=lf
+*.ts   text eol=lf
+*.cfg  text eol=lf
+*.ini  text eol=lf
+
+# Windows-native script formats: keep CRLF, do not force LF onto them.
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary/opaque formats: never touch line endings or diff as text.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.pdf  binary
+*.zip  binary

@@ -1,0 +1,15 @@
+# Worktrees
+.worktrees/
+.claude/settings.local.json
+.opencode/.cache/
+.opencode/node_modules/
+
+# Generated Python bytecode
+__pycache__/
+*.pyc
+
+# embacc/pyproject.toml build and local pixi-project artifacts
+.pixi/
+dist/
+build/
+*.egg-info/

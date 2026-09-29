@@ -1,0 +1,59 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cpp-embedded-accelerator"
+version = "2.6.0"
+description = "External project context and optional explicit agent tooling for C++/Embedded/Robotics/Rust/Python repositories."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Proprietary" }
+
+[project.scripts]
+embacc = "embacc.cli:main"
+
+[tool.pixi.project]
+channels = ["conda-forge"]
+platforms = ["win-64", "linux-64", "osx-64", "osx-arm64"]
+preview = ["pixi-build"]
+
+# Lets `pixi global install --path .` / `--git <url>` build and install this
+# project directly -- required in addition to the standard [build-system]
+# table above, which still does the actual wheel build via hatchling.
+[tool.pixi.package]
+name = "cpp-embedded-accelerator"
+version = "2.6.0"
+
+[tool.pixi.package.build]
+backend = { name = "pixi-build-python", version = "0.*" }
+
+[tool.pixi.package.host-dependencies]
+hatchling = "*"
+
+[tool.pixi.package.run-dependencies]
+ast-grep = "*"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/embacc"]
+
+# Runtime scripts, canonical skills, and tool templates are bundled as data
+# for the installed embacc command. Tests and developer-only validation code
+# stay out of the wheel.
+# Destination paths here are relative to the wheel root (no src/ prefix) --
+# `packages` above already handles collapsing src/embacc -> embacc.
+[tool.hatch.build.targets.wheel.force-include]
+"scripts/embacc_adapters.py" = "embacc/_bundle/scripts/embacc_adapters.py"
+"scripts/embacc_astgrep.py" = "embacc/_bundle/scripts/embacc_astgrep.py"
+"scripts/embacc_discover.py" = "embacc/_bundle/scripts/embacc_discover.py"
+"scripts/embacc_external.py" = "embacc/_bundle/scripts/embacc_external.py"
+"scripts/embacc_gitguard.py" = "embacc/_bundle/scripts/embacc_gitguard.py"
+"scripts/embacc_native.py" = "embacc/_bundle/scripts/embacc_native.py"
+"scripts/embacc_projectdoc.py" = "embacc/_bundle/scripts/embacc_projectdoc.py"
+"scripts/embacc_resources.py" = "embacc/_bundle/scripts/embacc_resources.py"
+"scripts/embacc_reflect.py" = "embacc/_bundle/scripts/embacc_reflect.py"
+"scripts/embacc_selfupdate.py" = "embacc/_bundle/scripts/embacc_selfupdate.py"
+"scripts/install-accelerator.py" = "embacc/_bundle/scripts/install-accelerator.py"
+".agents" = "embacc/_bundle/.agents"
+"tooling/templates" = "embacc/_bundle/tooling/templates"
+"AGENTS.md" = "embacc/_bundle/AGENTS.md"

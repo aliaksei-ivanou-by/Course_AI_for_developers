@@ -138,8 +138,11 @@ This optional module will expand with practical material on open-source models, 
 | Lesson | Full material | Short version |
 | --- | --- | --- |
 | 1. What comes next | [Applied Practices: What Comes Next](06%20Applied%20Practices/01%20More%20will%20follow%20here/01%20More%20will%20follow%20here.md) | [Summary](06%20Applied%20Practices/01%20More%20will%20follow%20here/01%20More%20will%20follow%20here%20-%20Summary.md) |
+| 2. Workshop: Innowise Accelerator | [Innowise Accelerator for Structured AI-Assisted Development](06%20Applied%20Practices/02%20Workshop%20-%20Innowise%20Accelerator/02%20Workshop%20-%20Innowise%20Accelerator.md) | [Summary](06%20Applied%20Practices/02%20Workshop%20-%20Innowise%20Accelerator/02%20Workshop%20-%20Innowise%20Accelerator%20-%20Summary.md) |
 
-This optional module will grow into a collection of end-to-end case studies focused on verified engineering outcomes.
+This optional module contains end-to-end case studies and workshop material focused on controlled AI-assisted workflows and verified engineering outcomes.
+
+The Accelerator workshop lesson includes an `embacc` v2.6.0 source snapshot from the [innowise-ai/cpp-embedded-accelerator](https://github.com/innowise-ai/cpp-embedded-accelerator) repository. Its package metadata says `Proprietary`, so the course links to the upstream source without describing the project as open source.
 
 ## How to Use This Repository
 
@@ -209,7 +212,9 @@ Course_AI_for_developers/
     ├── 02 Let us know where are you now/
     └── 03 Using local LLM without powerful hardware/
 └── 06 Applied Practices/
-    └── 01 More will follow here/
+    ├── 01 More will follow here/
+    └── 02 Workshop - Innowise Accelerator/
+        └── cpp-embedded-accelerator-main/
 ```
 
 Full lessons and summaries are stored separately. Images and other reference files are kept next to the Markdown documents that use them.
@@ -220,4 +225,4 @@ AI coding agents can read and modify files, execute commands, run tests, and int
 
 ## Project Status
 
-This repository is a work in progress. The introduction, meta-prompting, and spec-driven development modules, including their assessments, are available now, together with the first nine general-practices lessons and their assessment in context engineering, the complete Introduction to Agent Skills and Introduction to Subagents external courses, the Claude Code Agent Teams lesson, and the first two framework lessons covering framework selection and Task Master AI. The optional Advanced Techniques module includes an overview of planned material, a learner reflection survey, and a practical introduction to evaluating open-weight models through OpenCode and hosted inference before investing in local hardware. The Applied Practices module has also started with a guide to approaching future end-to-end case studies. Additional course material will be added over time.
+This repository is a work in progress. The introduction, meta-prompting, and spec-driven development modules, including their assessments, are available now, together with the first nine general-practices lessons and their assessment in context engineering, the complete Introduction to Agent Skills and Introduction to Subagents external courses, the Claude Code Agent Teams lesson, and the first two framework lessons covering framework selection and Task Master AI. The optional Advanced Techniques module includes an overview of planned material, a learner reflection survey, and a practical introduction to evaluating open-weight models through OpenCode and hosted inference before investing in local hardware. The Applied Practices module includes a guide to future case studies and a workshop-based lesson on the Innowise Accelerator framework, accompanied by a tested C++ / Embedded `embacc` v2.6.0 source snapshot. Additional course material will be added over time.
