@@ -2,7 +2,7 @@
 
 Practical course materials for AI-assisted software development. The course focuses on using modern AI coding agents to accelerate real engineering work while keeping developers responsible for planning, implementation decisions, review, security, and final results.
 
-The repository contains full lesson notes, concise summaries, external-course notes, reference materials, and quizzes. All materials are written in English and organized in the recommended learning order.
+The repository contains full lesson notes, concise summaries, external-course notes, reference materials, and quizzes. All materials are written in English and organized in the recommended learning order. The final course summary is also available in Russian.
 
 > **Time-sensitive content:** The course reflects the AI development landscape around mid-2026. Model availability, product features, pricing, and usage limits can change quickly.
 
@@ -32,6 +32,7 @@ The course introduces:
 - AI development frameworks and when to use them
 - MCP configuration, practical use cases, and security considerations
 - Applied workflows such as AI-assisted CI/CD troubleshooting and cloud migration
+- Additional topics including few-shot prompting, RAG, model routing, prompt-injection defenses, and token-efficient agent workflows
 
 Later modules expand on meta-prompting, spec-driven development, context engineering, advanced agent techniques, and applied practices.
 
@@ -147,6 +148,24 @@ This optional module contains end-to-end case studies and workshop material focu
 
 The Accelerator workshop lesson includes an `embacc` v2.6.0 source snapshot from the [innowise-ai/cpp-embedded-accelerator](https://github.com/innowise-ai/cpp-embedded-accelerator) repository. Its package metadata says `Proprietary`, so the course links to the upstream source without describing the project as open source.
 
+### Module 07 — Additional Themes
+
+| Lesson | Full material | Short version |
+| --- | --- | --- |
+| 1. Few-shot prompting | [Few-Shot Prompting](07%20Additional%20Themes/01%20Few-Shot%20Prompting/01%20Few-Shot%20Prompting.md) | [Summary](07%20Additional%20Themes/01%20Few-Shot%20Prompting/01%20Few-Shot%20Prompting%20-%20Summary.md) |
+| 2. Retrieval-Augmented Generation | [Retrieval-Augmented Generation (RAG)](07%20Additional%20Themes/02%20Retrieval-Augmented%20Generation/02%20Retrieval-Augmented%20Generation.md) | [Summary](07%20Additional%20Themes/02%20Retrieval-Augmented%20Generation/02%20Retrieval-Augmented%20Generation%20-%20Summary.md) |
+| 3. Model routing | [Model Routing](07%20Additional%20Themes/03%20Model%20Routing/03%20Model%20Routing.md) | [Summary](07%20Additional%20Themes/03%20Model%20Routing/03%20Model%20Routing%20-%20Summary.md) |
+| 4. Prompt-injection defenses | [Prompt Injection Defenses](07%20Additional%20Themes/04%20Prompt%20Injection%20Defenses/04%20Prompt%20Injection%20Defenses.md) | [Summary](07%20Additional%20Themes/04%20Prompt%20Injection%20Defenses/04%20Prompt%20Injection%20Defenses%20-%20Summary.md) |
+| 5. Reducing agent token usage | [RTK and Caveman](07%20Additional%20Themes/05%20RTK%20and%20Caveman/05%20RTK%20and%20Caveman.md) | [Summary](07%20Additional%20Themes/05%20RTK%20and%20Caveman/05%20RTK%20and%20Caveman%20-%20Summary.md) |
+
+This module develops useful topics that complement the main lesson sequence. The materials follow the same full-lesson plus short-summary format as the rest of the course.
+
+### Module 08 — Course Summary
+
+| Material | English | Russian |
+| --- | --- | --- |
+| Whole-course recap by key topics: LLMs and agents, prompt and context engineering, models, SDD, skills, hooks, subagents, MCP, security, cost, and the Accelerator, with links to the lessons | [Course Summary](08%20Summary/08%20Course%20Summary.md) | [Итоговое резюме курса](08%20Summary/08%20Course%20Summary%20%28RU%29.md) |
+
 ## How to Use This Repository
 
 1. Follow the numbered modules and lessons in order.
@@ -155,6 +174,8 @@ The Accelerator workshop lesson includes an `embacc` v2.6.0 source snapshot from
 4. Follow the linked public external materials when a lesson includes them.
 5. Complete each available module quiz after finishing its lessons.
 6. Verify time-sensitive product information against official documentation before applying it to production work.
+7. Use Module 07 for the additional topics that complement the main lesson sequence.
+8. Use the course summary in Module 08 for a final review or to find the right lesson quickly.
 
 ## Repository Structure
 
@@ -214,13 +235,20 @@ Course_AI_for_developers/
     ├── 01 More will follow here/
     ├── 02 Let us know where are you now/
     └── 03 Using local LLM without powerful hardware/
-└── 06 Applied Practices/
-    ├── 01 More will follow here/
-    ├── 02 Workshop - Innowise Accelerator/
-    │   └── cpp-embedded-accelerator-main/
-    ├── 03 Deploying Lovable project in Google Cloud with help of AI CLI/
-    ├── 04 Self-healing CI-CD with Claude Agents Teams/
-    └── 05 Demo a single-handed Fullstack AI project implementation/
+├── 06 Applied Practices/
+│   ├── 01 More will follow here/
+│   ├── 02 Workshop - Innowise Accelerator/
+│   │   └── cpp-embedded-accelerator-main/
+│   ├── 03 Deploying Lovable project in Google Cloud with help of AI CLI/
+│   ├── 04 Self-healing CI-CD with Claude Agents Teams/
+│   └── 05 Demo a single-handed Fullstack AI project implementation/
+├── 07 Additional Themes/
+│   ├── 01 Few-Shot Prompting/
+│   ├── 02 Retrieval-Augmented Generation/
+│   ├── 03 Model Routing/
+│   ├── 04 Prompt Injection Defenses/
+│   └── 05 RTK and Caveman/
+└── 08 Summary/
 ```
 
 Full lessons and summaries are stored separately. Images and other reference files are kept next to the Markdown documents that use them.
@@ -231,4 +259,4 @@ AI coding agents can read and modify files, execute commands, run tests, and int
 
 ## Project Status
 
-This repository is a work in progress. The introduction, meta-prompting, and spec-driven development modules, including their assessments, are available now, together with the first nine general-practices lessons and their assessment in context engineering, the complete Introduction to Agent Skills and Introduction to Subagents external courses, the Claude Code Agent Teams lesson, and the first two framework lessons covering framework selection and Task Master AI. The optional Advanced Techniques module includes an overview of planned material, a learner reflection survey, and a practical introduction to evaluating open-weight models through OpenCode and hosted inference before investing in local hardware. The Applied Practices module includes a guide to future case studies and a workshop-based lesson on the Innowise Accelerator framework, accompanied by a tested C++ / Embedded `embacc` v2.6.0 source snapshot. It also includes a practical walkthrough of moving a Lovable prototype to Google Cloud Run with an AI CLI, compared with one-click deployment from Google AI Studio. A further case study demonstrates self-healing CI/CD, in which a Claude Code agent team reads failed GitHub Actions logs, fixes the cause, and verifies the new run under limited permissions. A project retrospective then examines a complete AI-first MVP delivered by a single full-stack developer, covering specifications, changing requirements, QA, infrastructure costs, and team setup. Additional course material will be added over time.
+This repository is a work in progress. The introduction, meta-prompting, and spec-driven development modules, including their assessments, are available now, together with the first nine general-practices lessons and their assessment in context engineering, the complete Introduction to Agent Skills and Introduction to Subagents external courses, the Claude Code Agent Teams lesson, and the first two framework lessons covering framework selection and Task Master AI. The optional Advanced Techniques module includes an overview of planned material, a learner reflection survey, and a practical introduction to evaluating open-weight models through OpenCode and hosted inference before investing in local hardware. The Applied Practices module includes a guide to future case studies and a workshop-based lesson on the Innowise Accelerator framework, accompanied by a tested C++ / Embedded `embacc` v2.6.0 source snapshot. It also includes a practical walkthrough of moving a Lovable prototype to Google Cloud Run with an AI CLI, compared with one-click deployment from Google AI Studio. A further case study demonstrates self-healing CI/CD, in which a Claude Code agent team reads failed GitHub Actions logs, fixes the cause, and verifies the new run under limited permissions. A project retrospective then examines a complete AI-first MVP delivered by a single full-stack developer, covering specifications, changing requirements, QA, infrastructure costs, and team setup. Module 07 adds dedicated lessons on few-shot prompting, RAG, model routing, prompt-injection defenses, and RTK/Caveman token optimization. Module 08 provides a whole-course summary by key topics in English and Russian. Additional course material will be added over time.
