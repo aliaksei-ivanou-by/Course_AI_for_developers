@@ -62,9 +62,13 @@ Implementation/
 │   └── 10-retrospective.md
 ├── prompts/
 ├── patches/
+├── evidence/
+│   └── raw/
 └── workspace/
     └── Catch2/
 ```
+
+`evidence/raw/` holds full temporary logs and command output while a phase is in progress. It is ignored by Git; keep only reviewed, concise summaries in `artifacts/`.
 
 Create artifacts only when their phase begins. Do not generate empty documents merely to reproduce the tree.
 
@@ -79,7 +83,7 @@ Create artifacts only when their phase begins. Do not generate empty documents m
 
 - The nested Catch2 Git checkout.
 - Build directories, compiler caches, dependency downloads, or generated temporary output.
-- Full noisy logs when a short relevant excerpt and command are sufficient.
+- Full noisy logs when a short relevant excerpt and command are sufficient; keep them in the ignored `evidence/raw/` directory.
 - Credentials, tokens, environment files, private URLs, or machine-specific secrets.
 - Unreviewed AI scratch output.
 
@@ -145,7 +149,7 @@ Update this table as work progresses. A phase is complete only after its gate pa
 
 | Phase | Artifact or evidence | Status |
 | --- | --- | --- |
-| 0. Frame the work and establish safety | `artifacts/00-task-contract.md` | Not started |
+| 0. Frame the work and establish safety | `artifacts/00-task-contract.md` | Complete — accepted 2026-10-02 |
 | 1. Establish the pinned baseline | `artifacts/01-baseline.md` | Not started |
 | 2. Explore and map the codebase | `artifacts/02-codebase-map.md` | Not started |
 | 3. Specify and clarify behavior | `artifacts/03-spec.md`, `04-clarifications.md` | Not started |
@@ -201,8 +205,12 @@ Run from this `Implementation` directory:
 ```sh
 git clone https://github.com/catchorg/Catch2.git workspace/Catch2
 git -C workspace/Catch2 checkout v3.16.0
+git -C workspace/Catch2 describe --exact-match --tags HEAD   # must print v3.16.0
+git -C workspace/Catch2 status --short                       # must print nothing
 git -C workspace/Catch2 switch -c task/retry-failed
 ```
+
+Create the feature branch only after both checks succeed.
 
 Do not silently substitute another tag or branch.
 
@@ -500,6 +508,12 @@ ctest --test-dir debug-build -C Debug --output-on-failure -j 4
 
 git diff --check
 git status --short
+```
+
+When approval tests report output differences, inspect each difference first, then accept only the intentional ones with Catch2's approval script and commit the updated baselines:
+
+```sh
+python tools/scripts/approve.py
 ```
 
 Parse JSON and XML-family output with real parsers where available; do not treat visual inspection alone as proof of syntax validity.
