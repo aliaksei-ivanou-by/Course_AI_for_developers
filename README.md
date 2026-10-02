@@ -2,7 +2,7 @@
 
 Practical course materials for AI-assisted software development. The course focuses on using modern AI coding agents to accelerate real engineering work while keeping developers responsible for planning, implementation decisions, review, security, and final results.
 
-The repository contains full lesson notes, concise summaries, external-course notes, reference materials, and quizzes. All materials are written in English and organized in the recommended learning order. The final course summary is also available in Russian.
+The repository contains full lesson notes, concise summaries, external-course notes, reference materials, quizzes, and practical tasks. All materials are written in English and organized in the recommended learning order. The final course summary is also available in Russian.
 
 > **Time-sensitive content:** The course reflects the AI development landscape around mid-2026. Model availability, product features, pricing, and usage limits can change quickly.
 
@@ -166,6 +166,14 @@ This module develops useful topics that complement the main lesson sequence. The
 | --- | --- | --- |
 | Whole-course recap by key topics: LLMs and agents, prompt and context engineering, models, SDD, skills, hooks, subagents, MCP, security, cost, and the Accelerator, with links to the lessons | [Course Summary](08%20Summary/08%20Course%20Summary.md) | [Итоговое резюме курса](08%20Summary/08%20Course%20Summary%20%28RU%29.md) |
 
+### Module 09 — Practical Tasks
+
+| Task | Track | Assignment |
+| --- | --- | --- |
+| 1 | C++ | [Retry Failed Tests in Catch2](09%20Practical%20Tasks/01%20C%2B%2B%20-%20Retry%20Failed%20Tests%20in%20Catch2/01%20C%2B%2B%20-%20Retry%20Failed%20Tests%20in%20Catch2.md) |
+
+This module contains repository-level engineering tasks that assess whether a developer can use AI tools effectively while retaining responsibility for architecture, implementation, testing, and verification.
+
 ## How to Use This Repository
 
 1. Follow the numbered modules and lessons in order.
@@ -176,6 +184,7 @@ This module develops useful topics that complement the main lesson sequence. The
 6. Verify time-sensitive product information against official documentation before applying it to production work.
 7. Use Module 07 for the additional topics that complement the main lesson sequence.
 8. Use the course summary in Module 08 for a final review or to find the right lesson quickly.
+9. Complete a task from Module 09 to demonstrate an end-to-end, verified AI-assisted engineering workflow.
 
 ## Repository Structure
 
@@ -248,7 +257,9 @@ Course_AI_for_developers/
 │   ├── 03 Model Routing/
 │   ├── 04 Prompt Injection Defenses/
 │   └── 05 RTK and Caveman/
-└── 08 Summary/
+├── 08 Summary/
+└── 09 Practical Tasks/
+    └── 01 C++ - Retry Failed Tests in Catch2/
 ```
 
 Full lessons and summaries are stored separately. Images and other reference files are kept next to the Markdown documents that use them.
@@ -259,4 +270,4 @@ AI coding agents can read and modify files, execute commands, run tests, and int
 
 ## Project Status
 
-This repository is a work in progress. The introduction, meta-prompting, and spec-driven development modules, including their assessments, are available now, together with the first nine general-practices lessons and their assessment in context engineering, the complete Introduction to Agent Skills and Introduction to Subagents external courses, the Claude Code Agent Teams lesson, and the first two framework lessons covering framework selection and Task Master AI. The optional Advanced Techniques module includes an overview of planned material, a learner reflection survey, and a practical introduction to evaluating open-weight models through OpenCode and hosted inference before investing in local hardware. The Applied Practices module includes a guide to future case studies and a workshop-based lesson on the Innowise Accelerator framework, accompanied by a tested C++ / Embedded `embacc` v2.6.0 source snapshot. It also includes a practical walkthrough of moving a Lovable prototype to Google Cloud Run with an AI CLI, compared with one-click deployment from Google AI Studio. A further case study demonstrates self-healing CI/CD, in which a Claude Code agent team reads failed GitHub Actions logs, fixes the cause, and verifies the new run under limited permissions. A project retrospective then examines a complete AI-first MVP delivered by a single full-stack developer, covering specifications, changing requirements, QA, infrastructure costs, and team setup. Module 07 adds dedicated lessons on few-shot prompting, RAG, model routing, prompt-injection defenses, and RTK/Caveman token optimization. Module 08 provides a whole-course summary by key topics in English and Russian. Additional course material will be added over time.
+This repository is a work in progress. The introduction, meta-prompting, and spec-driven development modules, including their assessments, are available now, together with the first nine general-practices lessons and their assessment in context engineering, the complete Introduction to Agent Skills and Introduction to Subagents external courses, the Claude Code Agent Teams lesson, and the first two framework lessons covering framework selection and Task Master AI. The optional Advanced Techniques module includes an overview of planned material, a learner reflection survey, and a practical introduction to evaluating open-weight models through OpenCode and hosted inference before investing in local hardware. The Applied Practices module includes a guide to future case studies and a workshop-based lesson on the Innowise Accelerator framework, accompanied by a tested C++ / Embedded `embacc` v2.6.0 source snapshot. It also includes a practical walkthrough of moving a Lovable prototype to Google Cloud Run with an AI CLI, compared with one-click deployment from Google AI Studio. A further case study demonstrates self-healing CI/CD, in which a Claude Code agent team reads failed GitHub Actions logs, fixes the cause, and verifies the new run under limited permissions. A project retrospective then examines a complete AI-first MVP delivered by a single full-stack developer, covering specifications, changing requirements, QA, infrastructure costs, and team setup. Module 07 adds dedicated lessons on few-shot prompting, RAG, model routing, prompt-injection defenses, and RTK/Caveman token optimization. Module 08 provides a whole-course summary by key topics in English and Russian. Module 09 begins the practical tasks with a C++ assignment that adds retry support for failed Catch2 test cases. Additional course material will be added over time.
