@@ -36,6 +36,8 @@ attempt 3: second retry
 
 The goal is not merely to run a test body again. The implementation must preserve Catch2's logical test-case semantics, restart section and generator traversal correctly, expose retry information through reporters, and keep final statistics and exit status accurate.
 
+A course-guided execution workflow for this task is available in [Implementation/README.md](Implementation/README.md).
+
 ## Starting Point
 
 1. Check out the exact `v3.16.0` tag before making changes.

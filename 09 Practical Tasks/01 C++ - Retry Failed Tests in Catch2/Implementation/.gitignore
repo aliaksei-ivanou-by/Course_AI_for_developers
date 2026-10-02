@@ -1,0 +1,5 @@
+# Local external repository and build workspace
+workspace/
+
+# Raw temporary evidence; keep reviewed summaries under artifacts/
+evidence/raw/
