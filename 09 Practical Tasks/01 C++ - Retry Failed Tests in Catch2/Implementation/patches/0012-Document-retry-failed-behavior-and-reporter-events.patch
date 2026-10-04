@@ -1,0 +1,255 @@
+From 05490ed362b80c0480ff19a6b918e192c2b41945 Mon Sep 17 00:00:00 2001
+From: Aliaksei Ivanou <aliaksei.ivanou@innowise.com>
+Date: Sun, 4 Oct 2026 20:31:08 +0200
+Subject: [PATCH] Document retry-failed behavior and reporter events
+
+---
+ docs/command-line.md    | 56 +++++++++++++++++++++++++++++++++
+ docs/reporter-events.md | 69 ++++++++++++++++++++++++++++++++++++++---
+ docs/reporters.md       | 31 ++++++++++++++++++
+ docs/test-fixtures.md   |  8 +++++
+ 4 files changed, 160 insertions(+), 4 deletions(-)
+
+diff --git a/docs/command-line.md b/docs/command-line.md
+index 41c4ab75..2834dcbd 100644
+--- a/docs/command-line.md
++++ b/docs/command-line.md
+@@ -7,6 +7,7 @@
+ [Breaking into the debugger](#breaking-into-the-debugger)<br>
+ [Showing results for successful tests](#showing-results-for-successful-tests)<br>
+ [Aborting after a certain number of failures](#aborting-after-a-certain-number-of-failures)<br>
++[Retrying failed test cases](#retrying-failed-test-cases)<br>
+ [Listing available tests, tags or reporters](#listing-available-tests-tags-or-reporters)<br>
+ [Sending output to a file](#sending-output-to-a-file)<br>
+ [Naming a test run](#naming-a-test-run)<br>
+@@ -48,6 +49,7 @@ Click one of the following links to take you straight to that option - or scroll
+ <a href="#naming-a-test-run">                           `    -n, --name`</a><br />
+ <a href="#aborting-after-a-certain-number-of-failures"> `    -a, --abort`</a><br />
+ <a href="#aborting-after-a-certain-number-of-failures"> `    -x, --abortx`</a><br />
++<a href="#retrying-failed-test-cases">                `    --retry-failed`</a><br />
+ <a href="#warnings">                                    `    -w, --warn`</a><br />
+ <a href="#reporting-timings">                           `    -d, --durations`</a><br />
+ <a href="#input-file">                                  `    -f, --input-file`</a><br />
+@@ -263,6 +265,60 @@ If a ```CHECK``` assertion fails even the current test case is not aborted.
+ 
+ Sometimes this results in a flood of failure messages and you'd rather just see the first few. Specifying ```-a``` or ```--abort``` on its own will abort the whole test run on the first failed assertion of any kind. Use ```-x``` or ```--abortx``` followed by a number to abort after that number of assertion failures.
+ 
++<a id="retrying-failed-test-cases"></a>
++## Retrying failed test cases
++<pre>--retry-failed &lt;retries&gt;</pre>
++
++> Introduced in Catch2 X.Y.Z
++
++`--retry-failed N` allows up to `N` retries **after** the first attempt of
++each failed test case. Thus the maximum number of attempts for one test case
++is `N + 1`; the budget is per test case, not shared across the test run. The
++default is `0`, and omitting the option is equivalent to
++`--retry-failed 0`.
++
++For example,
++
++```console
++./tests --retry-failed 0  # one attempt, no retries
++./tests --retry-failed 1  # at most two attempts
++./tests --retry-failed 3  # at most four attempts
++```
++
++Catch2 stops at the first attempt whose outcome is not failed. The last
++attempt that runs determines the test case's final result and the process
++exit code. A test that fails one or more attempts and then passes is reported
++as a flaky pass. Its superseded failures remain available as diagnostics,
++but only the final attempt contributes to final assertion and test-case
++totals.
++
++An _attempt_ is a complete execution of a logical test case. It includes
++all _partial runs_ needed to traverse the test's sections and generators.
++The retry decision is made only after those partial runs finish; a partial
++run is not a retry and does not consume the retry budget. A retry starts the
++whole test case again rather than resuming at the failed assertion, section,
++or generator value.
++
++Each attempt starts with fresh Catch2-managed state. Section traversal and
++generators restart, persistent fixtures are reconstructed, assertion and
++output-capture state is reset, and Catch2's random-number generator is
++reseeded with the run's seed. Command-line section, generator, and path
++filters still apply to every attempt. State owned by the test is **not**
++rolled back: this includes globals, statics, files, environment variables,
++databases, network services, and threads started by the test.
++
++Catch2 applies its existing outcome rules before deciding to retry. A failed
++`[!mayfail]` or `[!shouldfail]` test is an accepted failure and is not
++retried. An unexpected pass of a `[!shouldfail]` test is still a failure and
++can be retried. A skip is not retried. Crashes, fatal signals, structured
++exceptions, stack overflows, and forced termination cannot be retried.
++
++The `--abort` and `--abortx` options take precedence over retries. If an
++attempt reaches the abort threshold, it is final and no retry starts. Failed
++assertions from an attempt that is superseded do not count towards the abort
++threshold for later tests. In particular, `--abort` normally prevents a
++failed attempt from being retried because its threshold is one.
++
+ <a id="listing-available-tests-tags-or-reporters"></a>
+ ## Listing available tests, tags or reporters
+ ```
+diff --git a/docs/reporter-events.md b/docs/reporter-events.md
+index 015f67be..4b89eb36 100644
+--- a/docs/reporter-events.md
++++ b/docs/reporter-events.md
+@@ -12,9 +12,9 @@ are used by [reporters](reporters.md#top) to customize Catch2's output,
+ and by [event listeners](event-listeners.md#top) to perform in-process
+ actions under some conditions.
+ 
+-There are currently 21 reporter events in Catch2, split between 4 distinct
++There are currently 23 reporter events in Catch2, split between 4 distinct
+ event groups:
+-* test running events (10 events)
++* test running events (12 events)
+ * benchmarking (4 events)
+ * listings (3 events)
+ * miscellaneous (4 events)
+@@ -22,11 +22,12 @@ event groups:
+ ## Test running events
+ 
+ Test running events are always paired so that for each `fooStarting` event,
+-there is a `fooEnded` event. This means that the 10 test running events
+-consist of 5 pairs of events:
++there is a `fooEnded` event. This means that the 12 test running events
++consist of 6 pairs of events:
+ 
+ * `testRunStarting` and `testRunEnded`,
+ * `testCaseStarting` and `testCaseEnded`,
++* `testCaseAttemptStarting` and `testCaseAttemptEnded`,
+ * `testCasePartialStarting` and `testCasePartialEnded`,
+ * `sectionStarting` and `sectionEnded`,
+ * `assertionStarting` and `assertionEnded`
+@@ -54,6 +55,66 @@ Individual runs through a test case, e.g. due to `SECTION`s or `GENERATE`s,
+ are handled by a different event.
+ 
+ 
++<a id="testcaseattempt-events"></a>
++### `testCaseAttempt` events
++
++> Introduced in Catch2 X.Y.Z
++
++```cpp
++void testCaseAttemptStarting( TestCaseAttemptInfo const& attemptInfo );
++void testCaseAttemptEnded( TestCaseAttemptStats const& attemptStats );
++```
++
++When [`--retry-failed N`](command-line.md#retrying-failed-test-cases) is
++greater than zero, these events bookend every attempt, including attempt 1
++and an attempt that passes immediately. They are nested inside the single
++`testCaseStarting`/`testCaseEnded` pair and outside that attempt's partial
++runs:
++
++```text
++testCaseStarting
++  testCaseAttemptStarting(k = 1, M)
++    testCasePartialStarting ... testCasePartialEnded
++  testCaseAttemptEnded(k = 1, M)
++  testCaseAttemptStarting(k = 2, M)       only after a failed attempt
++    ...
++  testCaseAttemptEnded(k = 2, M)
++testCaseEnded
++```
++
++Partial-run `partNumber` values continue increasing across attempts; they do
++not restart at one and are not attempt identifiers. An attempt stopped by an
++abort threshold is ended as the final attempt. Catch2 also sends the matching
++attempt-end event on its existing fatal-error reporting path before the
++test-case and test-run end events.
++
++`attemptNumber` is one-based and `maxAttempts` is `M = N + 1` in both
++structures. `TestCaseAttemptInfo` also contains `testInfo`.
++`TestCaseAttemptStats` contains the attempt's own `totals`, captured
++`stdOut` and `stdErr`, and `aborting`. Its `isFinal` field is false exactly
++when this attempt is superseded and another attempt follows. The attempt-end
++statistics are authoritative for that attempt; totals attached to assertion
++events are only progress information.
++
++The `TestCaseStats` passed to `testCaseEnded` has three retry-related fields:
++
++* `attemptCount` is the number of attempts that ran;
++* `maxAttempts` is `M`;
++* `isFlaky` is true when one or more failed attempts were followed by a
++  passing final attempt.
++
++Its totals describe only the final attempt, while its captured `stdOut` and
++`stdErr` contain output from all attempts in order. When retries are disabled,
++these fields retain their compatibility defaults (`1`, `1`, and `false`),
++and no attempt events are emitted.
++
++The new event functions have default no-op implementations rather than being
++pure virtual. Existing reporters and listeners therefore keep compiling and
++working without overriding them. Similarly, the default implementation of
++`IConfig::retryFailed()` returns zero. Multi-reporters forward attempt events
++to every listener and reporter in the same order as other events.
++
++
+ ### `testCasePartial` events
+ 
+ > Introduced in Catch2 3.0.1
+diff --git a/docs/reporters.md b/docs/reporters.md
+index 63297089..1bc7b92b 100644
+--- a/docs/reporters.md
++++ b/docs/reporters.md
+@@ -27,6 +27,37 @@ In that case you should read the [section on using multiple
+ reporters](#multiple-reporters) to avoid any surprises from doing so.
+ 
+ 
++<a id="retry-output"></a>
++## Reporting retried test cases
++
++> Introduced in Catch2 X.Y.Z
++
++When [`--retry-failed N`](command-line.md#retrying-failed-test-cases) is
++enabled and a test case is retried, built-in reporters keep diagnostics from
++superseded attempts without letting them change the final result. Their exact
++representations are:
++
++| Reporter | Retry output |
++| --- | --- |
++| console | Marks superseded attempts as `Attempt k of M failed`, identifies the following retry, and reports a flaky pass or exhausted failure explicitly. |
++| compact | Uses the same attempt, retry, flaky-pass, and exhausted-failure messages in compact form. |
++| XML | Wraps every attempt in an `Attempt` element with its number and maximum, followed by an `AttemptResult`; `OverallResult` records attempts used, maximum attempts, and flakiness. |
++| JSON | Adds the attempt number to partial runs and an `attempts` object containing the number used, maximum, flakiness, and per-attempt results. |
++| JUnit | Writes failures from superseded attempts at the start of `system-out`. Only the final attempt can create `failure` or `error` elements and affect suite failure/error counters. |
++| SonarQube | Writes superseded failures as sanitized XML comments. Only the final attempt creates failing elements. |
++| TeamCity | Writes superseded failures as non-failing `testStdErr` messages. Only the final attempt can emit `testFailed`. |
++| TAP | Writes superseded assertions as `#` diagnostic lines that do not consume test-point numbers. Assertions from the final attempt are the numbered test points and determine the plan. |
++| Automake | Writes one result line for the logical test case, based on its final outcome. |
++
++With retries disabled, reporter output is unchanged. With retries enabled but
++unused, only XML and JSON add structural attempt information. TAP buffers its
++own lines until an attempt ends, so those lines can interleave differently
++with output written directly by the test; the TAP text itself is unchanged.
++
++Custom reporters can observe attempts through the
++[`testCaseAttempt` events](reporter-events.md#testcaseattempt-events).
++
++
+ <a id="multiple-reporters"></a>
+ ## Using multiple reporters
+ 
+diff --git a/docs/test-fixtures.md b/docs/test-fixtures.md
+index 9496dd16..61873699 100644
+--- a/docs/test-fixtures.md
++++ b/docs/test-fixtures.md
+@@ -95,6 +95,14 @@ class.
+ one instance created throughout the entire run of a test case. To 
+ demonstrate this have a look at the following example:
+ 
++> Retry behaviour was introduced in Catch2 X.Y.Z
++
++When [`--retry-failed`](command-line.md#retrying-failed-test-cases) is
++enabled, "the entire run" above means one attempt. The persistent fixture is
++constructed before each attempt and destroyed after that attempt ends. It is
++still shared by all partial runs within the attempt, but a retry receives a
++fresh fixture instance.
++
+ ```cpp
+ class ClassWithExpensiveSetup {
+ public:
+-- 
+2.56.0.windows.1
+
