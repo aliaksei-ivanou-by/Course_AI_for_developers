@@ -1,0 +1,629 @@
+From 9bc96b83b9bb374a275c1f19c6e09e54ec7f8874 Mon Sep 17 00:00:00 2001
+From: Aliaksei Ivanou <aliaksei.ivanou@innowise.com>
+Date: Sun, 4 Oct 2026 19:38:15 +0200
+Subject: [PATCH] Cover retry totals, aborts, and selection
+
+Expand the retry integration harness to verify final-attempt totals and exit codes, maximum retry arithmetic, skips and special tags, abort precedence and budget restoration, section filters, test selection, sharding, listing, and Automake final statuses.
+
+No production change is needed for these scenarios.
+
+Tests: phase6-validate.ps1 T06 basic (92/92) and all (156/156).
+---
+ tests/ExtraTests/X96-RetryFailed.cpp |  99 ++++++-
+ tests/TestScripts/testRetryFailed.py | 393 ++++++++++++++++++++++++++-
+ 2 files changed, 481 insertions(+), 11 deletions(-)
+
+diff --git a/tests/ExtraTests/X96-RetryFailed.cpp b/tests/ExtraTests/X96-RetryFailed.cpp
+index 6cf453b8..ba175a2c 100644
+--- a/tests/ExtraTests/X96-RetryFailed.cpp
++++ b/tests/ExtraTests/X96-RetryFailed.cpp
+@@ -218,6 +218,13 @@ namespace {
+             m_testCase = nullptr;
+         }
+ 
++        void skipTest( Catch::TestCaseInfo const& testInfo ) override {
++            CATCH_ENFORCE( !m_testCase && !m_attemptOpen && !m_partialRunOpen,
++                           "retry-recorder skipped a test with an open event" );
++            m_stream << "test-case-skipped name=\"" << testInfo.name
++                     << "\"\n";
++        }
++
+         void testRunEnded( Catch::TestRunStats const& stats ) override {
+             CATCH_ENFORCE( !m_testCase && !m_attemptOpen && !m_partialRunOpen,
+                            "retry-recorder ended the run with an open event" );
+@@ -357,6 +364,13 @@ namespace {
+     unsigned int alwaysFailExecutions = 0;
+     unsigned int independentXExecutions = 0;
+     unsigned int independentYExecutions = 0;
++    unsigned int shouldFailPassExecutions = 0;
++    unsigned int abortBudgetFlakyExecutions = 0;
++    unsigned int abortShouldFailExecutions = 0;
++    unsigned int shardAExecutions = 0;
++    unsigned int shardBExecutions = 0;
++    unsigned int shardCExecutions = 0;
++    unsigned int shardDExecutions = 0;
+ 
+     struct SimpleSectionFixture {
+         static unsigned int constructions;
+@@ -457,14 +471,14 @@ TEST_CASE_METHOD( CountingFixture,
+ }
+ 
+ TEST_CASE( "retry immediate pass",
+-           "[.retry-immediate][.retry-mixed]" ) {
++           "[.retry-immediate][.retry-mixed][.retry-outcomes]" ) {
+     ++immediateExecutions;
+     std::cout << "immediate execution=" << immediateExecutions << '\n';
+     CHECK( immediateExecutions == 1 );
+ }
+ 
+ TEST_CASE( "retry fail once",
+-           "[.retry-fail-once][.retry-mixed]" ) {
++           "[.retry-fail-once][.retry-mixed][.retry-outcomes]" ) {
+     ++failOnceExecutions;
+     INFO( "fail-once-info execution=" << failOnceExecutions );
+     std::cout << "fail-once-out execution=" << failOnceExecutions << '\n';
+@@ -480,7 +494,7 @@ TEST_CASE( "retry fail twice",
+ }
+ 
+ TEST_CASE( "retry always fails",
+-           "[.retry-always-fails][.retry-mixed]" ) {
++           "[.retry-always-fails][.retry-mixed][.retry-outcomes]" ) {
+     ++alwaysFailExecutions;
+     std::cout << "always-fail execution=" << alwaysFailExecutions << '\n';
+     CHECK( false );
+@@ -589,3 +603,82 @@ TEST_CASE( "retry random generator", "[.retry-random]" ) {
+     std::cout << "random value=" << value << '\n';
+     CHECK( randomEntries > 3 );
+ }
++
++TEST_CASE( "retry skip", "[.retry-skip][.retry-outcomes]" ) {
++    SKIP( "skip is a final outcome" );
++}
++
++TEST_CASE( "retry failure followed by skip", "[.retry-fail-skip]" ) {
++    CHECK( false );
++    SKIP( "failure takes precedence over skip" );
++}
++
++TEST_CASE( "retry mayfail failure",
++           "[.retry-mayfail][.retry-outcomes][!mayfail]" ) {
++    CHECK( false );
++}
++
++TEST_CASE( "retry shouldfail expected failure",
++           "[.retry-shouldfail-failure][!shouldfail]" ) {
++    CHECK( false );
++}
++
++TEST_CASE( "retry shouldfail unexpected pass",
++           "[.retry-shouldfail-pass][!shouldfail]" ) {
++    ++shouldFailPassExecutions;
++    std::cout << "shouldfail-pass execution=" << shouldFailPassExecutions
++              << '\n';
++    CHECK( true );
++}
++
++TEST_CASE( "retry abort 1 fails", "[.retry-abort]" ) {
++    CHECK( false );
++}
++
++TEST_CASE( "retry abort 2 would pass", "[.retry-abort]" ) {
++    CHECK( true );
++}
++
++TEST_CASE( "retry abort budget 1 flaky", "[.retry-abort-budget]" ) {
++    ++abortBudgetFlakyExecutions;
++    CHECK( abortBudgetFlakyExecutions >= 2 );
++}
++
++TEST_CASE( "retry abort budget 2 fails", "[.retry-abort-budget]" ) {
++    CHECK( false );
++}
++
++TEST_CASE( "retry abort budget 3 passes", "[.retry-abort-budget]" ) {
++    CHECK( true );
++}
++
++TEST_CASE( "retry abort shouldfail 1 unexpected pass",
++           "[.retry-abort-shouldfail][!shouldfail]" ) {
++    ++abortShouldFailExecutions;
++    CHECK( true );
++}
++
++TEST_CASE( "retry abort shouldfail 2 next test runs",
++           "[.retry-abort-shouldfail]" ) {
++    CHECK( abortShouldFailExecutions == 3 );
++}
++
++TEST_CASE( "retry shard A", "[.retry-shard]" ) {
++    ++shardAExecutions;
++    CHECK( shardAExecutions >= 2 );
++}
++
++TEST_CASE( "retry shard B", "[.retry-shard]" ) {
++    ++shardBExecutions;
++    CHECK( shardBExecutions >= 2 );
++}
++
++TEST_CASE( "retry shard C", "[.retry-shard]" ) {
++    ++shardCExecutions;
++    CHECK( shardCExecutions >= 2 );
++}
++
++TEST_CASE( "retry shard D", "[.retry-shard]" ) {
++    ++shardDExecutions;
++    CHECK( shardDExecutions >= 2 );
++}
+diff --git a/tests/TestScripts/testRetryFailed.py b/tests/TestScripts/testRetryFailed.py
+index 2deedee6..2f3b3f58 100644
+--- a/tests/TestScripts/testRetryFailed.py
++++ b/tests/TestScripts/testRetryFailed.py
+@@ -38,6 +38,8 @@ def run_reporters(
+     test_spec=TEST_SPEC,
+     expected_returncode=0,
+     extra_arguments=(),
++    expected_stdout="",
++    expected_stderr="",
+ ):
+     output_paths = [
+         output_dir / "{}-{}-{}.txt".format(reporter, index, suffix)
+@@ -71,8 +73,12 @@ def run_reporters(
+             result.stderr,
+         )
+     )
+-    assert result.stdout == "", "Unexpected stdout:\n{}".format(result.stdout)
+-    assert result.stderr == "", "Unexpected stderr:\n{}".format(result.stderr)
++    assert result.stdout == expected_stdout, "Unexpected stdout:\n{}".format(
++        result.stdout
++    )
++    assert result.stderr == expected_stderr, "Unexpected stderr:\n{}".format(
++        result.stderr
++    )
+     return [path.read_text(encoding="utf-8") for path in output_paths]
+ 
+ 
+@@ -105,6 +111,7 @@ def run_retry_scenario(
+     test_spec,
+     retries,
+     expected_returncode=0,
++    extra_arguments=(),
+ ):
+     return run_reporter(
+         test_exe,
+@@ -114,6 +121,7 @@ def run_retry_scenario(
+         ("--retry-failed", str(retries)),
+         test_spec,
+         expected_returncode,
++        extra_arguments,
+     )
+ 
+ 
+@@ -171,7 +179,7 @@ def assert_attempts(
+     attempt_numbers,
+     max_attempts,
+     flaky,
+-    passed,
++    outcome,
+ ):
+     starts = event_lines(output, "test-case-attempt-starting ", test_name)
+     ends = event_lines(output, "test-case-attempt-ended ", test_name)
+@@ -193,14 +201,43 @@ def assert_attempts(
+     assert "attempts={}/{} flaky={}".format(
+         attempt_numbers[-1], max_attempts, str(flaky).lower()
+     ) in final_line, final_line
+-    expected_counts = (
+-        "test-cases={passed=1,failed=0"
+-        if passed
+-        else "test-cases={passed=0,failed=1"
+-    )
++    if isinstance(outcome, bool):
++        outcome = "passed" if outcome else "failed"
++    expected_counts = {
++        "passed": (
++            "test-cases={passed=1,failed=0,failed-but-ok=0,skipped=0}"
++        ),
++        "failed": (
++            "test-cases={passed=0,failed=1,failed-but-ok=0,skipped=0}"
++        ),
++        "failed-but-ok": (
++            "test-cases={passed=0,failed=0,failed-but-ok=1,skipped=0}"
++        ),
++        "skipped": (
++            "test-cases={passed=0,failed=0,failed-but-ok=0,skipped=1}"
++        ),
++    }[outcome]
+     assert expected_counts in final_line, final_line
+ 
+ 
++def assert_run_totals(output, assertions, test_cases, aborting=False):
++    expected = (
++        "test-run-ended assertions={" + assertions + "} "
++        "test-cases={" + test_cases + "} "
++        "aborting=" + str(aborting).lower()
++    )
++    assert event_lines(output, "test-run-ended ") == [expected], output
++
++
++def started_test_names(output):
++    names = []
++    for line in event_lines(output, "test-case-starting "):
++        match = re.search(r'name="([^"]+)"', line)
++        assert match is not None, line
++        names.append(match.group(1))
++    return names
++
++
+ def part_numbers(output, test_name):
+     result = []
+     for line in event_lines(
+@@ -287,6 +324,22 @@ def main():
+             immediate, "retry immediate pass", [1], 3, False, True
+         )
+ 
++        largest_retry_count = run_retry_scenario(
++            test_exe,
++            output_dir,
++            "largest-retry-count",
++            "[.retry-immediate]",
++            4294967295,
++        )
++        assert_attempts(
++            largest_retry_count,
++            "retry immediate pass",
++            [1],
++            4294967296,
++            False,
++            True,
++        )
++
+         fail_once = run_retry_scenario(
+             test_exe,
+             output_dir,
+@@ -399,6 +452,119 @@ def main():
+             "aborting=false"
+         ], mixed
+ 
++        skipped = run_retry_scenario(
++            test_exe,
++            output_dir,
++            "skipped",
++            "[.retry-skip]",
++            2,
++            4,
++        )
++        assert_attempts(skipped, "retry skip", [1], 3, False, "skipped")
++        assert_run_totals(
++            skipped,
++            "passed=0,failed=0,failed-but-ok=0,skipped=1",
++            "passed=0,failed=0,failed-but-ok=0,skipped=1",
++        )
++
++        failure_then_skip = run_retry_scenario(
++            test_exe,
++            output_dir,
++            "failure-then-skip",
++            "[.retry-fail-skip]",
++            2,
++            42,
++        )
++        assert_attempts(
++            failure_then_skip,
++            "retry failure followed by skip",
++            [1, 2, 3],
++            3,
++            False,
++            False,
++        )
++        for line in event_lines(
++            failure_then_skip,
++            "test-case-attempt-ended ",
++            "retry failure followed by skip",
++        ):
++            assert (
++                "assertions={passed=0,failed=1,failed-but-ok=0,skipped=1}"
++                in line
++            ), line
++
++        mayfail = run_retry_scenario(
++            test_exe,
++            output_dir,
++            "mayfail",
++            "[.retry-mayfail]",
++            2,
++        )
++        assert_attempts(
++            mayfail,
++            "retry mayfail failure",
++            [1],
++            3,
++            False,
++            "failed-but-ok",
++        )
++
++        shouldfail_failure = run_retry_scenario(
++            test_exe,
++            output_dir,
++            "shouldfail-failure",
++            "[.retry-shouldfail-failure]",
++            2,
++        )
++        assert_attempts(
++            shouldfail_failure,
++            "retry shouldfail expected failure",
++            [1],
++            3,
++            False,
++            "failed-but-ok",
++        )
++
++        shouldfail_pass = run_retry_scenario(
++            test_exe,
++            output_dir,
++            "shouldfail-pass",
++            "[.retry-shouldfail-pass]",
++            2,
++            42,
++        )
++        assert_attempts(
++            shouldfail_pass,
++            "retry shouldfail unexpected pass",
++            [1, 2, 3],
++            3,
++            False,
++            False,
++        )
++        assert all(
++            "assertions={passed=1,failed=1,failed-but-ok=0,skipped=0}"
++            in line
++            for line in event_lines(
++                shouldfail_pass,
++                "test-case-attempt-ended ",
++                "retry shouldfail unexpected pass",
++            )
++        ), shouldfail_pass
++
++        outcomes = run_retry_scenario(
++            test_exe,
++            output_dir,
++            "outcomes",
++            "[.retry-outcomes]",
++            2,
++            42,
++        )
++        assert_run_totals(
++            outcomes,
++            "passed=2,failed=1,failed-but-ok=1,skipped=1",
++            "passed=2,failed=1,failed-but-ok=1,skipped=1",
++        )
++
+         simple_section = run_retry_scenario(
+             test_exe,
+             output_dir,
+@@ -425,6 +591,27 @@ def main():
+             nested_sections, "retry nested sections", 3
+         )
+ 
++        section_filter = run_retry_scenario(
++            test_exe,
++            output_dir,
++            "section-filter",
++            "[.retry-nested-sections]",
++            2,
++            extra_arguments=("-c", "B"),
++        )
++        assert_attempts(
++            section_filter,
++            "retry nested sections",
++            [1, 2],
++            3,
++            True,
++            True,
++        )
++        assert part_numbers(section_filter, "retry nested sections") == [0, 1]
++        for value in attempt_outputs(section_filter, "retry nested sections"):
++            assert "path=A" not in value, value
++            assert "path=B" in value, value
++
+         generator = run_retry_scenario(
+             test_exe,
+             output_dir,
+@@ -534,6 +721,196 @@ def main():
+         assert "listener-starts=1 listener-ends=0" in multi_outputs[0]
+         assert "listener-starts=1 listener-ends=1" in multi_outputs[0]
+ 
++        aborted = run_retry_scenario(
++            test_exe,
++            output_dir,
++            "abort",
++            "[.retry-abort]",
++            2,
++            42,
++            ("--abort",),
++        )
++        assert_attempts(
++            aborted, "retry abort 1 fails", [1], 3, False, False
++        )
++        abort_end = event_lines(
++            aborted, "test-case-attempt-ended ", "retry abort 1 fails"
++        )[0]
++        assert "aborting=true final=true" in abort_end, abort_end
++        assert started_test_names(aborted) == ["retry abort 1 fails"], aborted
++        assert event_lines(aborted, "test-case-skipped ") == [
++            'test-case-skipped name="retry abort 2 would pass"'
++        ], aborted
++        assert_run_totals(
++            aborted,
++            "passed=0,failed=1,failed-but-ok=0,skipped=0",
++            "passed=0,failed=1,failed-but-ok=0,skipped=0",
++            True,
++        )
++
++        abort_budget = run_retry_scenario(
++            test_exe,
++            output_dir,
++            "abort-budget",
++            "[.retry-abort-budget]",
++            1,
++            42,
++            ("--abortx", "2"),
++        )
++        assert_attempts(
++            abort_budget,
++            "retry abort budget 1 flaky",
++            [1, 2],
++            2,
++            True,
++            True,
++        )
++        assert_attempts(
++            abort_budget,
++            "retry abort budget 2 fails",
++            [1, 2],
++            2,
++            False,
++            False,
++        )
++        assert_attempts(
++            abort_budget,
++            "retry abort budget 3 passes",
++            [1],
++            2,
++            False,
++            True,
++        )
++        assert_run_totals(
++            abort_budget,
++            "passed=2,failed=1,failed-but-ok=0,skipped=0",
++            "passed=2,failed=1,failed-but-ok=0,skipped=0",
++        )
++
++        abort_shouldfail = run_retry_scenario(
++            test_exe,
++            output_dir,
++            "abort-shouldfail",
++            "[.retry-abort-shouldfail]",
++            2,
++            42,
++            ("--abort",),
++        )
++        assert_attempts(
++            abort_shouldfail,
++            "retry abort shouldfail 1 unexpected pass",
++            [1, 2, 3],
++            3,
++            False,
++            False,
++        )
++        assert_attempts(
++            abort_shouldfail,
++            "retry abort shouldfail 2 next test runs",
++            [1],
++            3,
++            False,
++            True,
++        )
++        assert_run_totals(
++            abort_shouldfail,
++            "passed=2,failed=0,failed-but-ok=0,skipped=0",
++            "passed=1,failed=1,failed-but-ok=0,skipped=0",
++        )
++
++        shard_names = {
++            "retry shard A",
++            "retry shard B",
++            "retry shard C",
++            "retry shard D",
++        }
++        names_by_shard = []
++        for shard_index in (0, 1):
++            shard = run_retry_scenario(
++                test_exe,
++                output_dir,
++                "shard-{}".format(shard_index),
++                "[.retry-shard]",
++                1,
++                extra_arguments=(
++                    "--shard-count",
++                    "2",
++                    "--shard-index",
++                    str(shard_index),
++                ),
++            )
++            selected_names = set(started_test_names(shard))
++            assert len(selected_names) == 2, shard
++            names_by_shard.append(selected_names)
++            for name in selected_names:
++                assert_attempts(shard, name, [1, 2], 2, True, True)
++            assert_run_totals(
++                shard,
++                "passed=2,failed=0,failed-but-ok=0,skipped=0",
++                "passed=2,failed=0,failed-but-ok=0,skipped=0",
++            )
++        assert names_by_shard[0].isdisjoint(names_by_shard[1])
++        assert names_by_shard[0] | names_by_shard[1] == shard_names
++
++        selected_by_name = run_retry_scenario(
++            test_exe,
++            output_dir,
++            "selected-by-name",
++            "retry shard A",
++            1,
++        )
++        assert started_test_names(selected_by_name) == ["retry shard A"]
++        assert_attempts(
++            selected_by_name, "retry shard A", [1, 2], 2, True, True
++        )
++
++        listed = run_reporter(
++            test_exe,
++            output_dir,
++            "retry-recorder",
++            "list-tests",
++            ("--retry-failed", "2"),
++            "[.retry-shard]",
++            extra_arguments=("--list-tests",),
++        )
++        assert not event_lines(listed, "test-case-"), listed
++        assert not event_lines(listed, "test-run-ended "), listed
++        assert all(name in listed for name in shard_names), listed
++
++        automake_flaky = run_reporters(
++            test_exe,
++            output_dir,
++            ("retry-recorder", "Automake"),
++            "automake-flaky",
++            ("--retry-failed", "2"),
++            "[.retry-fail-once]",
++            expected_stdout=(
++                "fail-once-out execution=1\n"
++                "fail-once-out execution=2\n"
++            ),
++            expected_stderr=(
++                "fail-once-err execution=1\n"
++                "fail-once-err execution=2\n"
++            ),
++        )[1]
++        assert automake_flaky == ":test-result: PASS retry fail once\n"
++
++        automake_exhausted = run_reporters(
++            test_exe,
++            output_dir,
++            ("retry-recorder", "Automake"),
++            "automake-exhausted",
++            ("--retry-failed", "2"),
++            "[.retry-always-fails]",
++            42,
++            expected_stdout=(
++                "always-fail execution=1\n"
++                "always-fail execution=2\n"
++                "always-fail execution=3\n"
++            ),
++        )[1]
++        assert automake_exhausted == ":test-result: FAIL retry always fails\n"
++
+ 
+ if __name__ == "__main__":
+     sys.exit(main())
+-- 
+2.56.0.windows.1
+
