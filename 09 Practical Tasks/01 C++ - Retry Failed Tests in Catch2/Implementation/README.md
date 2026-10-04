@@ -155,7 +155,7 @@ Update this table as work progresses. A phase is complete only after its gate pa
 | 0. Frame the work and establish safety | `artifacts/00-task-contract.md` | Complete — accepted |
 | 1. Establish the pinned baseline | `artifacts/01-baseline.md` | Complete — accepted |
 | 2. Explore and map the codebase | `artifacts/02-codebase-map.md` | Complete — accepted |
-| 3. Specify and clarify behavior | `artifacts/03-spec.md`, `04-clarifications.md` | Not started |
+| 3. Specify and clarify behavior | `artifacts/03-spec.md`, `04-clarifications.md` | Complete — accepted |
 | 4. Create and review the technical plan | `artifacts/05-plan.md`, `07-decisions.md` | Not started |
 | 5. Decompose into verifiable tasks | `artifacts/06-tasks.md` | Not started |
 | 6. Implement in small tested slices | Catch2 commits and task evidence | Not started |
