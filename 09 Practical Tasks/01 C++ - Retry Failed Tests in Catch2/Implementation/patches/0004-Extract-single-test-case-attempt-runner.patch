@@ -1,0 +1,120 @@
+From 086d974e61b39ebd259cc2f3a35cd18444f09b36 Mon Sep 17 00:00:00 2001
+From: Aliaksei Ivanou <aliaksei.ivanou@innowise.com>
+Date: Sun, 4 Oct 2026 19:15:55 +0200
+Subject: [PATCH] Extract single test case attempt runner
+
+Move the prepare, tracker setup, RNG seeding, partial-run loop, classification, output collection, and teardown for one complete test case attempt into RunContext::runTestAttempt. Keep runTest responsible for the unchanged outer test-case events and final totals.
+
+Tests: phase6-validate.ps1 T04 basic (92/92) and all (156/156); RetryFailed::Scenarios and PartialTestCaseEvents (2/2).
+---
+ src/catch2/internal/catch_run_context.cpp | 39 ++++++++++++++++-------
+ src/catch2/internal/catch_run_context.hpp | 11 +++++++
+ 2 files changed, 38 insertions(+), 12 deletions(-)
+
+diff --git a/src/catch2/internal/catch_run_context.cpp b/src/catch2/internal/catch_run_context.cpp
+index 18e01f75..973a0ee3 100644
+--- a/src/catch2/internal/catch_run_context.cpp
++++ b/src/catch2/internal/catch_run_context.cpp
+@@ -364,6 +364,29 @@ namespace Catch {
+ 
+         auto const& testInfo = testCase.getTestCaseInfo();
+         m_reporter->testCaseStarting(testInfo);
++
++        std::uint64_t testRuns = 0;
++        auto attemptResult = runTestAttempt( testCase, prevTotals, testRuns );
++
++        m_totals.testCases += attemptResult.totals.testCases;
++        m_reporter->testCaseEnded(
++            TestCaseStats( testInfo,
++                           attemptResult.totals,
++                           CATCH_MOVE( attemptResult.stdOut ),
++                           CATCH_MOVE( attemptResult.stdErr ),
++                           aborting() ) );
++
++        m_activeTestCase = nullptr;
++        m_testCaseTracker = nullptr;
++
++        return attemptResult.totals;
++    }
++
++    RunContext::TestCaseAttemptResult RunContext::runTestAttempt(
++        TestCaseHandle const& testCase,
++        Totals const& totalsAtAttemptStart,
++        std::uint64_t& testRuns ) {
++        auto const& testInfo = testCase.getTestCaseInfo();
+         testCase.prepareTestCase();
+         m_activeTestCase = &testCase;
+ 
+@@ -406,7 +429,6 @@ namespace Catch {
+         //  it had when the generator for i was initialized.)
+         seedRng( *m_config );
+ 
+-        uint64_t testRuns = 0;
+         std::string redirectedCout;
+         std::string redirectedCerr;
+         do {
+@@ -432,24 +454,17 @@ namespace Catch {
+             ++testRuns;
+         } while (!m_testCaseTracker->isSuccessfullyCompleted() && !aborting());
+ 
+-        Totals deltaTotals = m_totals.delta(prevTotals);
++        Totals deltaTotals = m_totals.delta(totalsAtAttemptStart);
+         if (testInfo.expectedToFail() && deltaTotals.testCases.passed > 0) {
+             deltaTotals.assertions.failed++;
+             deltaTotals.testCases.passed--;
+             deltaTotals.testCases.failed++;
+         }
+-        m_totals.testCases += deltaTotals.testCases;
+         testCase.tearDownTestCase();
+-        m_reporter->testCaseEnded(TestCaseStats(testInfo,
+-                                  deltaTotals,
+-                                  CATCH_MOVE(redirectedCout),
+-                                  CATCH_MOVE(redirectedCerr),
+-                                  aborting()));
+-
+-        m_activeTestCase = nullptr;
+-        m_testCaseTracker = nullptr;
+ 
+-        return deltaTotals;
++        return { deltaTotals,
++                 CATCH_MOVE( redirectedCout ),
++                 CATCH_MOVE( redirectedCerr ) };
+     }
+ 
+ 
+diff --git a/src/catch2/internal/catch_run_context.hpp b/src/catch2/internal/catch_run_context.hpp
+index f333735d..e0c597dd 100644
+--- a/src/catch2/internal/catch_run_context.hpp
++++ b/src/catch2/internal/catch_run_context.hpp
+@@ -22,6 +22,7 @@
+ #include <catch2/internal/catch_move_and_forward.hpp>
+ #include <catch2/internal/catch_thread_support.hpp>
+ 
++#include <cstdint>
+ #include <string>
+ 
+ namespace Catch {
+@@ -107,10 +108,20 @@ namespace Catch {
+         bool aborting() const;
+ 
+     private:
++        struct TestCaseAttemptResult {
++            Totals totals;
++            std::string stdOut;
++            std::string stdErr;
++        };
++
+         void assertionPassedFastPath( SourceLineInfo lineInfo );
+         // Update the non-thread-safe m_totals from the atomic assertion counts.
+         void updateTotalsFromAtomics();
+ 
++        TestCaseAttemptResult
++        runTestAttempt( TestCaseHandle const& testCase,
++                        Totals const& totalsAtAttemptStart,
++                        std::uint64_t& testRuns );
+         void runCurrentTest();
+         void invokeActiveTestCase();
+ 
+-- 
+2.56.0.windows.1
+

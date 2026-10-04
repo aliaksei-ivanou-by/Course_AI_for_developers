@@ -75,7 +75,7 @@ There is no cycle. T00, T01, and T02 touch disjoint files and can be done in any
 - **Evidence:** Windows `T03-run-02-all`: HEAD `d5568dcf…` (T02) on `task/retry-failed`, diff limited to the 3 task files (485 insertions); configure and build exit 0, **0 warnings**; focused `RetryFailed` **11/11 passed**, including `RetryFailed::Scenarios`, whose fresh-process runs proved that the omitted option and `--retry-failed 0` produce identical recorder, XML, and JSON output, emit no attempt events or fields, preserve `attemptCount = maxAttempts = 1` and `isFlaky = false`, and run the legacy reporter/listener; full `all-tests` **156/156 passed** (155 previous + 1 new, 13.2 s); no `*.unapproved.txt`; status after the run showed only the 3 task files. Commit in `workspace/Catch2`: `57c5840d03a25a745d1f043d8454078d21c0bee9` "Add retry-failed zero-retry test harness". Patch: `patches/0003-Add-retry-failed-zero-retry-test-harness.patch`; `git am` of `0001`–`0003` on a clean `v3.16.0` gives tree `d33670e6…`, identical to the validated branch. (`T03-run-01-all` was an initial red run: the harness's no-attempt assertion matched the valid summary field `attempts=1/1`; narrowing it to attempt-event names fixed the test.)
 - **Independent:** no.
 
-### [ ] T04 — Isolate one attempt in `RunContext` without behaviour change
+### [x] T04 — Isolate one attempt in `RunContext` without behaviour change
 
 - **Outcome:** the body of `RunContext::runTest` from `prepareTestCase` to `tearDownTestCase` is a private helper that runs exactly one complete attempt and returns its totals and output; behaviour, event order, and data are unchanged.
 - **Files / symbols:** `src/catch2/internal/catch_run_context.hpp`/`.cpp` (`runTest` and one new private helper; the counter snapshot/restore helpers come with T05, where they are first used).
@@ -83,7 +83,7 @@ There is no cycle. T00, T01, and T02 touch disjoint files and can be done in any
 - **Focused tests:** T03 zero-retry scenarios; existing `PartialTestCaseEvents`.
 - **Covers:** CO-1 (refactoring safety).
 - **Regression:** full `basic-tests` and `all-tests`; approval tests unchanged.
-- **Evidence:** _pending_ (format: see Working Model)
+- **Evidence:** Windows `T04-run-01-basic`: HEAD `57c5840d…` (T03) on `task/retry-failed`, diff limited to `catch_run_context.hpp`/`.cpp` (38 insertions, 12 deletions); configure and build exit 0, **0 warnings**; focused `RunTests|ApprovalTests` **2/2 passed**; full `basic-tests` **92/92 passed** (19.3 s); no `*.unapproved.txt`. Windows `T04-run-02-all`: same repository state; configure and build exit 0, 4 warnings, all baseline `D9025` from the two disabled-exceptions targets; focused `RetryFailed::Scenarios|PartialTestCaseEvents` **2/2 passed**, proving unchanged zero-retry recorder/XML/JSON output, legacy callbacks, and partial-event ordering; full `all-tests` **156/156 passed** (20.6 s); no `*.unapproved.txt`; status after both runs showed only the 2 task files. Commit in `workspace/Catch2`: `086d974e61b39ebd259cc2f3a35cd18444f09b36` "Extract single test case attempt runner". Patch: `patches/0004-Extract-single-test-case-attempt-runner.patch`; `git am` of `0001`–`0004` on a clean `v3.16.0` gives tree `8f02b0ed…`, identical to the validated branch.
 - **Independent:** no.
 
 ### [ ] T05 — Retry loop with fresh state and attempt events
