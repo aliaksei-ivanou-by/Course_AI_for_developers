@@ -82,7 +82,7 @@ Each decision records the context, the alternatives, the choice, and its consequ
 
 - Context: any new `SelfTest` case appears in all 19 approval outputs (M §9).
 - Alternatives: `SelfTest` cases with excluded tags; a dedicated extra executable plus a Python scenario script.
-- Choice: `tests/ExtraTests/X96-RetryFailed.cpp` with a recording reporter and legacy reporter/listener, driven by `tests/TestScripts/testRetryFailed.py`; CLI parsing tests stay in `SelfTest` because they do not run tests.
+- Choice: `tests/ExtraTests/X96-RetryFailed.cpp` with a recording reporter and legacy reporter/listener, driven by `tests/TestScripts/testRetryFailed.py`. CLI parsing and multi-reporter unit tests stay in `SelfTest` because they do not run tests; they carry the `[approvals]` tag, which `tools/scripts/approvalTests.py:213-228` excludes, as the existing "Parse rng seed in different formats" does.
 - Consequences: approval baselines stay unchanged (CO-1); each scenario runs in a fresh process, so static counters make deterministic flaky fixtures.
 
 ## D13. Types and overflow safety

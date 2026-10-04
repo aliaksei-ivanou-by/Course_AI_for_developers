@@ -44,12 +44,12 @@ There is no cycle. T00, T01, and T02 touch disjoint files and can be done in any
 ### [ ] T01 — `--retry-failed` option and configuration
 
 - **Outcome:** `--retry-failed N` is parsed, validated, shown in help, stored in `ConfigData`, and readable through `IConfig`; invalid input fails through Catch2's normal error path before tests start.
-- **Files / symbols:** `src/catch2/catch_config.hpp`/`.cpp` (`ConfigData::retryFailed`, `Config::retryFailed`), `src/catch2/interfaces/catch_interfaces_config.hpp`/`.cpp` (non-pure `IConfig::retryFailed`), `src/catch2/internal/catch_commandline.cpp` (`setRetryFailed`, `Opt`), `tests/SelfTest/IntrospectiveTests/CmdLine.tests.cpp`, `tests/CMakeLists.txt` (`RetryFailed::Help`, `RetryFailed::CliError::*`).
+- **Files / symbols:** `src/catch2/catch_config.hpp`/`.cpp` (`ConfigData::retryFailed`, `Config::retryFailed`), `src/catch2/interfaces/catch_interfaces_config.hpp`/`.cpp` (non-pure `IConfig::retryFailed`), `src/catch2/internal/catch_commandline.cpp` (`setRetryFailed`, `Opt`), `tests/SelfTest/IntrospectiveTests/CmdLine.tests.cpp` (test case "Parsing retry-failed cli flag"), `tests/CMakeLists.txt` (`RetryFailed::Help`, `RetryFailed::CliError::*`).
 - **Depends on:** none.
-- **Focused tests:** `SelfTest "[command-line]"` with new sections: default 0; `0`, `1`, `3`, `4294967295` accepted and visible through `Config` and `IConfig`; missing, `-1`, `abc`, `1.5`, `1e3`, `4294967296`, repeated option rejected. CTests: `RetryFailed::Help` (option and its meaning in `-h` output), `RetryFailed::CliError::*` (stderr `Error(s) in input`, no test output).
+- **Focused tests:** `SelfTest "[retry-failed]"`, a new test case tagged `[approvals][cli][command-line][retry-failed]`: default 0; `0`, `1`, `3`, `+3`, `003`, ` 3 `, `4294967295` and the `--retry-failed=2` form accepted and visible through `Config` and `IConfig`; `-1`, `abc`, `1.5`, `1e3`, `0x10`, `4294967296`, and an empty value rejected with `Could not parse '…' as retry count`; a missing value and `-1` as a separate argument rejected with `Expected argument following --retry-failed`; a repeated option rejected with `Unrecognised token: --retry-failed`; the `IConfig` default body returns 0. CTests: `RetryFailed::Help` (option without a short alias and its meaning in `-h` output), `RetryFailed::CliError::{MissingValue,Negative,NotANumber,Fraction,Exponent,Hexadecimal,TooLarge,Repeated}` (`Error(s) in input:` with the message, no reporter output), `RetryFailed::CliError::ExitCode` (non-zero exit).
 - **Covers:** CLI-1 – CLI-7; AC-01 – AC-04, AC-05 (configuration part).
-- **Regression:** full `basic-tests`; approval tests unchanged.
-- **Evidence:** _pending_ (format: see Working Model)
+- **Regression:** full `basic-tests`; approval tests unchanged. Every `SelfTest` test case appears in the approval baselines unless it carries the `[approvals]` tag, which `tools/scripts/approvalTests.py:213-228` excludes; the new test case carries it, as the existing "Parse rng seed in different formats" does (`tests/SelfTest/IntrospectiveTests/CmdLine.tests.cpp:460`).
+- **Evidence:** Linux (GCC, `-Werror`): `SelfTest "[retry-failed]"` 47 assertions in 1 test case passed; `RetryFailed|ApprovalTests` CTests 11/11 passed; full `basic-tests` 91/91 passed (81 existing + 10 new); no `*.unapproved.txt`. Windows `T01-run-01-basic`: HEAD `317ac1ed…` on `task/retry-failed`, diff limited to the 7 task files (209 insertions); configure and build exit 0, 0 warnings; focused `RetryFailed|ApprovalTests` **11/11 passed**; full `basic-tests` **92/92 passed** (82 existing + 10 new, 19.5 s); no `*.unapproved.txt`; status after the run shows only the task files. Commit in `workspace/Catch2`: _pending_.
 - **Independent:** yes.
 
 ### [ ] T02 — Attempt reporting API (inert)
@@ -57,9 +57,9 @@ There is no cycle. T00, T01, and T02 touch disjoint files and can be done in any
 - **Outcome:** `TestCaseAttemptInfo`, `TestCaseAttemptStats`, the `TestCaseStats` fields, and the non-pure `testCaseAttemptStarting`/`testCaseAttemptEnded` events exist; `MultiReporter` forwards them in listener-then-reporter order; nothing emits them yet.
 - **Files / symbols:** `src/catch2/interfaces/catch_interfaces_reporter.hpp`/`.cpp`, `src/catch2/reporters/catch_reporter_multi.hpp`/`.cpp`, `tests/SelfTest/IntrospectiveTests/Reporters.tests.cpp`.
 - **Depends on:** none.
-- **Focused tests:** extend "Multireporter calls reporters and listeners in correct order" with the two attempt events; a test that a reporter deriving directly from `IEventListener` without the new overrides compiles and receives the default no-op.
+- **Focused tests:** a new test case, tagged `[approvals]`, that the multi-reporter forwards the two attempt events in the same listener-then-reporter order as "Multireporter calls reporters and listeners in correct order" (that test is not tagged, so extending it would change the approval baselines); a test that a reporter deriving directly from `IEventListener` without the new overrides compiles and receives the default no-op.
 - **Covers:** E-9, CO-2, CO-3 (types); AC-33 (unit part).
-- **Regression:** full `basic-tests`; approval tests unchanged.
+- **Regression:** full `basic-tests`; approval tests unchanged (new `SelfTest` test cases tagged `[approvals]`, see T01).
 - **Evidence:** _pending_ (format: see Working Model)
 - **Independent:** yes.
 

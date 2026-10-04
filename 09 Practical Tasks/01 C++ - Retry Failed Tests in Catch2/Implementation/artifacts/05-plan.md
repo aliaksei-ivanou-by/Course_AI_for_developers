@@ -183,16 +183,16 @@ No new source or header files are added under `src/`, so `src/CMakeLists.txt`, `
 
 | Asset | Layer | Purpose |
 | --- | --- | --- |
-| `CmdLine.tests.cpp` additions | SelfTest unit | Default, accepted values incl. `4294967295`, rejected values, `Config`/`IConfig` exposure |
+| `CmdLine.tests.cpp` addition, tagged `[approvals]` | SelfTest unit | Default, accepted values incl. `4294967295`, rejected values, `Config`/`IConfig` exposure |
 | CTest `RetryFailed::Help` | Process | `SelfTest -h` output contains the option and its meaning |
-| CTests `RetryFailed::CliError::*` | Process | `--retry-failed` with no value, `-1`, `abc`, `1.5`, `4294967296`, twice: `Error(s) in input` on stderr, no test output |
+| CTests `RetryFailed::CliError::*` | Process | `--retry-failed` with no value, `-1`, `abc`, `1.5`, `1e3`, `0x10`, `4294967296`, twice: `Error(s) in input` on stderr, no test output |
 | `X96-RetryFailed.cpp` | Extra executable | Hidden counting-fixture tests (counters in statics, one process per scenario), a `retry-recorder` reporter that prints every test-case, attempt, and partial event with numbers, totals, flags, and outputs, enforcing nesting with `CATCH_ENFORCE`; a reporter and a listener written against the existing API only |
 | `testRetryFailed.py` | Python (label `uses-python`) | Runs scenarios, compares recorder output, exit codes, and attempt counts; parses JSON with `json`, XML/JUnit/SonarQube with `xml.etree`; checks console, compact, TAP, TeamCity markers |
-| Approval baselines | Existing | Unchanged: no SelfTest test uses retries, proving zero-retry output for all built-in reporters (CO-1) |
-| `Reporters.tests.cpp` addition | SelfTest unit | Multi-reporter forwards attempt events to listeners then reporters |
+| Approval baselines | Existing | Unchanged: no SelfTest test uses retries, proving zero-retry output for all built-in reporters (CO-1); the new SelfTest unit tests carry the `[approvals]` tag, which the approval script excludes |
+| `Reporters.tests.cpp` addition, tagged `[approvals]` | SelfTest unit | Multi-reporter forwards attempt events to listeners then reporters |
 | Crash scenario | Extra executable, label `uses-signals` | Fatal error with `N = 2` and with JUnit: one attempt, balanced attempt end, reporter does not crash |
 
-Retry scenarios live in `ExtraTests`, not in `SelfTest`, so approval baselines do not change (D12, CO-1).
+Retry scenarios live in `ExtraTests`, not in `SelfTest`, and the new `SelfTest` unit tests are tagged `[approvals]`, so approval baselines do not change (D12, CO-1).
 
 ### 10.2 Scenario coverage
 
