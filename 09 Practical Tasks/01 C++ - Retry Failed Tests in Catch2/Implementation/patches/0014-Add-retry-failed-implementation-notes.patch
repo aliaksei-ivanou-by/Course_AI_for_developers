@@ -1,0 +1,247 @@
+From 9037e6faa6638b160d2f24e240f6b671d979c99d Mon Sep 17 00:00:00 2001
+From: Aliaksei Ivanou <aliaksei.ivanou@innowise.com>
+Date: Sun, 4 Oct 2026 20:57:47 +0200
+Subject: [PATCH] Add retry-failed implementation notes
+
+---
+ IMPLEMENTATION_NOTES.md | 228 ++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 228 insertions(+)
+ create mode 100644 IMPLEMENTATION_NOTES.md
+
+diff --git a/IMPLEMENTATION_NOTES.md b/IMPLEMENTATION_NOTES.md
+new file mode 100644
+index 00000000..feaa0c23
+--- /dev/null
++++ b/IMPLEMENTATION_NOTES.md
+@@ -0,0 +1,228 @@
++# Retry Failed Test Cases — Implementation Notes
++
++This implementation is based on Catch2 `v3.16.0` at commit
++`317ac1ed4c0bb6e6b91eafc817e05c488feffcb3`. It adds the command-line option
++`--retry-failed N`, where `N` is the number of retries after the first attempt
++and the default is zero.
++
++## 1. Execution design
++
++The parsed retry count is stored in `ConfigData` and exposed through
++`IConfig::retryFailed()`. `RunContext::runTest` keeps the existing single
++logical `testCaseStarting`/`testCaseEnded` lifetime and runs complete attempts
++inside it:
++
++1. Snapshot the current assertion totals.
++2. Emit `testCaseAttemptStarting` when retries are enabled.
++3. Call `runTestAttempt`, which performs the full tracker, section, generator,
++   fixture, output-capture, and partial-run lifecycle.
++4. Compute the attempt outcome and emit `testCaseAttemptEnded`.
++5. Stop or restore superseded assertion totals and start the next attempt.
++6. Emit one final `testCaseEnded` for the logical test case.
++
++Attempt numbers are one-based. `maxAttempts` is calculated as
++`uint64_t(N) + 1`, so the largest accepted unsigned retry count does not
++overflow. With `N == 0`, the original path is preserved: no attempt events are
++emitted, compatibility fields keep their defaults, and reporter output is
++unchanged.
++
++## 2. Retry decision and final outcome
++
++The retry decision is made only after `runTestAttempt` has completed all
++partial runs needed for section and generator traversal and has torn down the
++test case. Another attempt starts exactly when:
++
++```text
++attempt failed AND retries remain AND the test run is not aborting
++```
++
++Catch2 stops on the first non-failing attempt or after `N + 1` attempts. The
++last attempt that ran is authoritative for the logical test result, process
++exit status, and final assertion/test-case totals. A passing final attempt
++after one or more failed attempts sets `TestCaseStats::isFlaky`; an exhausted
++test remains failed. A skip is a non-failing final outcome and is not retried.
++
++## 3. State reset between attempts
++
++Each retry is a complete test-case run, not a resumed assertion or partial
++run.
++
++| State | Reset mechanism |
++| --- | --- |
++| Tracker and sections | `TrackerContext::startRun()` creates a new root for every attempt; `startCycle()` still drives each partial run. |
++| Generators | New trackers recreate generator traversal from the beginning while preserving configured generator/path filters. |
++| Fixtures | `prepareTestCase()` and `tearDownTestCase()` bracket every attempt. Persistent fixtures remain persistent only across partial runs within one attempt and are reconstructed for a retry. |
++| Randomness | `seedRng(*m_config)` runs at the start of every attempt, reproducing the configured seed while keeping generators within that attempt distinct. |
++| Captured output | Redirect buffers are drained and cleared after every partial run, accumulated per attempt, and then appended in attempt order for the logical test case. |
++| Assertions | The atomic `passed`, `failed`, `failedButOk`, and `skipped` counts are snapshotted before an attempt and restored if that attempt is superseded. |
++| Messages and sections | Existing end-of-partial-run cleanup removes unscoped messages and closes or repairs unfinished sections before a new attempt starts. |
++
++Partial-run `partNumber` values intentionally continue increasing across
++attempts; they identify partial runs, not attempts. Catch2-managed state is
++fresh, but state owned by the test is not rolled back.
++
++## 4. Intermediate diagnostics and final totals
++
++`TestCaseAttemptStats` contains one attempt's totals, captured stdout/stderr,
++abort flag, and `isFinal`. Reporters receive it before a superseded attempt's
++assertion counts are restored, so its diagnostics remain complete. The final
++`TestCaseStats` contains only the last attempt's totals, plus concatenated
++stdout/stderr from every attempt and the fields `attemptCount`, `maxAttempts`,
++and `isFlaky`. The run totals add the logical test case exactly once.
++
++Built-in reporters retain superseded diagnostics without turning them into
++final failures. Console and compact label attempts and flaky/exhausted
++outcomes; XML and JSON store attempt structures; JUnit uses `system-out`;
++SonarQube uses sanitized comments; TeamCity uses non-failing `testStdErr`;
++TAP uses diagnostic lines; Automake reports only the final logical outcome.
++Cumulative reporters keep superseded attempt trees separately from the final
++tree.
++
++## 5. Reporter API and compatibility
++
++The public reporter interface adds:
++
++- `TestCaseAttemptInfo` with `testInfo`, `attemptNumber`, and `maxAttempts`;
++- `TestCaseAttemptStats` with per-attempt totals, output, abort state, and
++  finality;
++- `testCaseAttemptStarting` and `testCaseAttemptEnded` events;
++- `attemptCount`, `maxAttempts`, and `isFlaky` on `TestCaseStats`.
++
++Attempt events surround an attempt's partial events and are nested within the
++single logical test-case event pair. `MultiReporter` forwards them in the
++existing listener-first, reporter-second order. The event methods are
++non-pure virtual no-ops, and `IConfig::retryFailed()` is non-pure with a zero
++default. Existing custom reporters, listeners, and configuration
++implementations therefore continue to compile and behave as retry-disabled
++unless they opt in to the new data.
++
++## 6. Abort options and special tags
++
++Existing outcome rules are applied before retry selection:
++
++- failed `[!mayfail]` and expected-failing `[!shouldfail]` tests are accepted
++  and are not retried;
++- an unexpected pass of `[!shouldfail]` is a failure and can be retried;
++- explicit skips are not retried;
++- fatal signals and structured exceptions balance the active attempt event,
++  but are final and follow the existing process-termination path.
++
++`--abort` and `--abortx` take precedence. An attempt that reaches the abort
++threshold is final. Counts from a failed attempt that is actually superseded
++are restored, so it does not consume the later abort budget. In particular,
++`--abort` normally prevents retrying the first failed attempt because its
++threshold is one.
++
++## 7. Main files changed
++
++- Configuration and CLI: `src/catch2/catch_config.hpp`,
++  `src/catch2/catch_config.cpp`,
++  `src/catch2/interfaces/catch_interfaces_config.hpp`,
++  `src/catch2/interfaces/catch_interfaces_config.cpp`, and
++  `src/catch2/internal/catch_commandline.cpp` define, parse, validate, and
++  expose the option.
++- Execution: `src/catch2/internal/catch_run_context.hpp` and
++  `src/catch2/internal/catch_run_context.cpp` isolate a complete attempt,
++  implement the retry loop, restore counters, and balance fatal events.
++- Reporter contract: `src/catch2/interfaces/catch_interfaces_reporter.*` and
++  `src/catch2/reporters/catch_reporter_multi.*` define and forward attempt
++  events and final retry metadata.
++- Built-in reporting: streaming/cumulative reporter bases and the console,
++  compact, XML, JSON, JUnit, SonarQube, TeamCity, and TAP reporters preserve
++  intermediate diagnostics while reporting the final outcome correctly.
++- Tests: `tests/ExtraTests/X96-RetryFailed.cpp`,
++  `tests/TestScripts/testRetryFailed.py`,
++  `tests/TestScripts/testRetryFailedFatal.py`, `tests/CMakeLists.txt`,
++  `tests/ExtraTests/CMakeLists.txt`, and focused SelfTest cases provide CLI,
++  lifecycle, state, reporter, fatal-path, and compatibility coverage.
++- Documentation: `docs/command-line.md`, `docs/reporter-events.md`,
++  `docs/reporters.md`, and `docs/test-fixtures.md` document user and extension
++  behavior.
++- Distribution: `extras/catch_amalgamated.hpp` and
++  `extras/catch_amalgamated.cpp` were regenerated with the project script.
++
++## 8. Validation commands and results
++
++Validation ran on Windows with MSVC 19.50.35718.0, CMake/CTest 4.3.4, Python
++3.13.14, and the Visual Studio 18 2026 generator. Build trees were outside the
++checkout.
++
++The unmodified `v3.16.0` baseline was configured, built, and tested with:
++
++```powershell
++cmake -B C:\build\Course_AI\catch2\basic-test-build -S . -DCMAKE_BUILD_TYPE=Debug --preset basic-tests
++cmake --build C:\build\Course_AI\catch2\basic-test-build --config Debug --parallel
++ctest --test-dir C:\build\Course_AI\catch2\basic-test-build -C Debug --output-on-failure
++
++python tools/scripts/generateAmalgamatedFiles.py
++cmake -B C:\build\Course_AI\catch2\debug-build -S . -DCMAKE_BUILD_TYPE=Debug --preset all-tests
++cmake --build C:\build\Course_AI\catch2\debug-build --config Debug --parallel
++ctest --test-dir C:\build\Course_AI\catch2\debug-build -C Debug --output-on-failure -j 4
++```
++
++Baseline results were 82/82 for `basic-tests` and 145/145 for `all-tests`,
++with no approval differences. The all build had four expected MSVC `D9025`
++warnings from the two disabled-exceptions test targets.
++
++During implementation, the same configure/build/full-CTest sequence was run
++after every slice. Focused commands used `ctest -C Debug --output-on-failure
++-R <filter>` with these filters:
++
++| Area | Filter and result |
++| --- | --- |
++| CLI | `RetryFailed|ApprovalTests`: 11/11 passed |
++| Zero-retry and state lifecycle | `RetryFailed::Scenarios|PartialTestCaseEvents`: 2/2 passed |
++| Fatal path | `RetryFailed::Fatal|Reporters::CrashInJunitReporter|RetryFailed::Scenarios|PartialTestCaseEvents`: 4/4 passed |
++| Cumulative reporters | `RetryFailed::Scenarios|RetryFailed::Fatal|Reporters::CrashInJunitReporter|BenchmarksInCumulativeReporter`: 4/4 passed |
++| Basic regression | `RunTests|ApprovalTests`: 2/2 passed |
++| Final amalgamation/retry check | `AmalgamatedFileTest|RetryFailed::Scenarios|RetryFailed::Fatal`: 3/3 passed |
++
++The final files were validated from new empty build directories with:
++
++```powershell
++python tools/scripts/generateAmalgamatedFiles.py
++
++cmake -B C:\build\Course_AI\catch2-t13-final-fresh\basic-test-build -S . -DCMAKE_BUILD_TYPE=Debug --preset basic-tests
++cmake --build C:\build\Course_AI\catch2-t13-final-fresh\basic-test-build --config Debug --parallel
++ctest --test-dir C:\build\Course_AI\catch2-t13-final-fresh\basic-test-build -C Debug --output-on-failure -R 'RunTests|ApprovalTests'
++ctest --test-dir C:\build\Course_AI\catch2-t13-final-fresh\basic-test-build -C Debug --output-on-failure
++
++cmake -B C:\build\Course_AI\catch2-t13-final-fresh\debug-build -S . -DCMAKE_BUILD_TYPE=Debug --preset all-tests
++cmake --build C:\build\Course_AI\catch2-t13-final-fresh\debug-build --config Debug --parallel
++ctest --test-dir C:\build\Course_AI\catch2-t13-final-fresh\debug-build -C Debug --output-on-failure -R 'AmalgamatedFileTest|RetryFailed::Scenarios|RetryFailed::Fatal'
++ctest --test-dir C:\build\Course_AI\catch2-t13-final-fresh\debug-build -C Debug --output-on-failure -j 4
++```
++
++The generator concatenated 181 headers and 108 source files. The final fresh
++results were 92/92 for `basic-tests`, 157/157 for `all-tests`, 2/2 for the
++focused basic checks, and 3/3 for the focused amalgamation/retry checks.
++Approval tests produced no `*.unapproved.txt` files. The basic build had zero
++warnings; the all build had only the four baseline `D9025` warnings. The first
++fresh amalgamated build exposed duplicate anonymous-namespace helper names in
++JUnit and SonarQube; reporter-specific names fixed the single-translation-unit
++collision. A later clean build stopped when drive C: filled during linking;
++after removing only disposable task build output, the command was rerun from
++an empty directory and passed as reported above.
++
++Finally, `git diff --check`, `git status --short`, and a clean application of
++the patch series to `v3.16.0` were checked. Before this documentation-only
++file was added, the reproduced tree was identical to the validated branch.
++
++## 9. Known limitations and unsupported cases
++
++- Catch2 does not roll back test-owned or external state: globals, statics,
++  files, environment variables, databases, network services, child processes,
++  or threads can carry effects into a retry. Tests must manage such state.
++- A fatal signal, structured exception, stack overflow, forced termination,
++  or process crash cannot be recovered and retried. Catch2 only performs
++  best-effort balanced reporting before the existing termination behavior.
++- Retries are sequential. There is no delay/backoff, parallel retry
++  scheduling, persistence across process launches, or retry-only filter.
++- The unit of retry is the whole logical test case. Individual assertions,
++  section paths, generator values, and partial runs are not retried alone.
++- TAP buffers its own assertion lines while retries are enabled. Output written
++  directly by the test can therefore interleave differently, although TAP's
++  reporter text remains unchanged when no retry occurs.
++- The accepted retry count is an unsigned integer. Very large values are
++  represented safely, but an always-failing test can naturally take a very
++  long time if given a very large retry budget.
+-- 
+2.56.0.windows.1
+
