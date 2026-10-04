@@ -81,7 +81,7 @@ Create artifacts only when their phase begins. Do not generate empty documents m
 - Reviewed requirements, decisions, plans, and task status.
 - Concise command results and validation conclusions.
 - Reusable prompts that were actually used and reviewed.
-- The final patch or another small reproducible handoff artifact.
+- The Catch2 changes as a patch series in `patches/`, one patch per Phase 6 commit, regenerated after each commit with `git -C workspace/Catch2 format-patch 317ac1ed4c0bb6e6b91eafc817e05c488feffcb3..task/retry-failed -o ../../patches`. To reproduce the work, clone Catch2, check out `v3.16.0`, and run `git am <path-to>/patches/*.patch`.
 
 ### What is not tracked
 
@@ -159,7 +159,7 @@ Update this table as work progresses. A phase is complete only after its gate pa
 | 3. Specify and clarify behavior | `artifacts/03-spec.md`, `04-clarifications.md` | Complete — accepted |
 | 4. Create and review the technical plan | `artifacts/05-plan.md`, `07-decisions.md` | Complete — approved |
 | 5. Decompose into verifiable tasks | `artifacts/06-tasks.md` | Complete — approved |
-| 6. Implement in small tested slices | Catch2 commits and task evidence | In progress — T00 done; T01 validated on Windows, Catch2 commit pending; T02–T14 open (see `artifacts/06-tasks.md`) |
+| 6. Implement in small tested slices | Catch2 commits and task evidence | In progress — T00–T01 done; T02–T14 open (see `artifacts/06-tasks.md`) |
 | 7. Review with fresh context | `artifacts/08-review.md` | Not started |
 | 8. Run full validation and convergence | `artifacts/09-validation.md` | Not started |
 | 9. Prepare the handoff and reflect | patch, implementation notes, `10-retrospective.md` | Not started |

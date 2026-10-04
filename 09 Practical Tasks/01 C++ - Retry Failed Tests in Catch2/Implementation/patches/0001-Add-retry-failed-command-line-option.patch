@@ -1,0 +1,330 @@
+From 113f88707c0b077af86b92417772838a9c01ab79 Mon Sep 17 00:00:00 2001
+From: Aliaksei Ivanou <aliaksei.ivanou@innowise.com>
+Date: Sun, 4 Oct 2026 18:44:31 +0200
+Subject: [PATCH] Add --retry-failed command-line option
+
+Parse --retry-failed N (unsigned, default 0) with the same number syntax as --shard-count, store it in ConfigData, and expose it through Config::retryFailed() and a non-pure IConfig::retryFailed() that returns 0, so existing IConfig implementations keep compiling. The runner does not use the value yet.
+
+Tests: SelfTest 'Parsing retry-failed cli flag' (tagged [approvals] so the approval baselines stay unchanged) and CTests RetryFailed::Help and RetryFailed::CliError::*.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+Claude-Session: https://claude.ai/code/session_01GunDRycct3rWzK5p7dpZxP
+---
+ src/catch2/catch_config.cpp                   |  1 +
+ src/catch2/catch_config.hpp                   |  3 +
+ .../interfaces/catch_interfaces_config.cpp    |  2 +
+ .../interfaces/catch_interfaces_config.hpp    |  5 +
+ src/catch2/internal/catch_commandline.cpp     | 13 +++
+ tests/CMakeLists.txt                          | 89 +++++++++++++++++
+ .../IntrospectiveTests/CmdLine.tests.cpp      | 96 +++++++++++++++++++
+ 7 files changed, 209 insertions(+)
+
+diff --git a/src/catch2/catch_config.cpp b/src/catch2/catch_config.cpp
+index e71ee353..78b41f2e 100644
+--- a/src/catch2/catch_config.cpp
++++ b/src/catch2/catch_config.cpp
+@@ -215,6 +215,7 @@ namespace Catch {
+     ColourMode Config::defaultColourMode() const       { return m_data.defaultColourMode; }
+     bool Config::shouldDebugBreak() const              { return m_data.shouldDebugBreak; }
+     int Config::abortAfter() const                     { return m_data.abortAfter; }
++    unsigned int Config::retryFailed() const           { return m_data.retryFailed; }
+     bool Config::showInvisibles() const                { return m_data.showInvisibles; }
+     Verbosity Config::verbosity() const                { return m_data.verbosity; }
+ 
+diff --git a/src/catch2/catch_config.hpp b/src/catch2/catch_config.hpp
+index 3d0c1e96..2a222312 100644
+--- a/src/catch2/catch_config.hpp
++++ b/src/catch2/catch_config.hpp
+@@ -68,6 +68,8 @@ namespace Catch {
+         unsigned int shardCount = 1;
+         unsigned int shardIndex = 0;
+ 
++        unsigned int retryFailed = 0;
++
+         bool skipBenchmarks = false;
+         bool benchmarkNoAnalysis = false;
+         unsigned int benchmarkSamples = 100;
+@@ -141,6 +143,7 @@ namespace Catch {
+         ColourMode defaultColourMode() const override;
+         bool shouldDebugBreak() const override;
+         int abortAfter() const override;
++        unsigned int retryFailed() const override;
+         bool showInvisibles() const override;
+         Verbosity verbosity() const override;
+         bool skipBenchmarks() const override;
+diff --git a/src/catch2/interfaces/catch_interfaces_config.cpp b/src/catch2/interfaces/catch_interfaces_config.cpp
+index 655bc1b4..41a07158 100644
+--- a/src/catch2/interfaces/catch_interfaces_config.cpp
++++ b/src/catch2/interfaces/catch_interfaces_config.cpp
+@@ -10,4 +10,6 @@
+ 
+ namespace Catch {
+     IConfig::~IConfig() = default;
++
++    unsigned int IConfig::retryFailed() const { return 0; }
+ }
+diff --git a/src/catch2/interfaces/catch_interfaces_config.hpp b/src/catch2/interfaces/catch_interfaces_config.hpp
+index f52315db..94c6a462 100644
+--- a/src/catch2/interfaces/catch_interfaces_config.hpp
++++ b/src/catch2/interfaces/catch_interfaces_config.hpp
+@@ -77,6 +77,11 @@ namespace Catch {
+         virtual bool warnAboutInfiniteGenerators() const = 0;
+         virtual bool zeroTestsCountAsSuccess() const = 0;
+         virtual int abortAfter() const = 0;
++        //! Number of retries after the first attempt of a failed test case
++        //!
++        //! Not pure virtual, so that existing implementations keep
++        //! compiling; the default means "no retries".
++        virtual unsigned int retryFailed() const;
+         virtual bool showInvisibles() const = 0;
+         virtual ShowDurations showDurations() const = 0;
+         virtual double minDuration() const = 0;
+diff --git a/src/catch2/internal/catch_commandline.cpp b/src/catch2/internal/catch_commandline.cpp
+index 22948c27..177a01fb 100644
+--- a/src/catch2/internal/catch_commandline.cpp
++++ b/src/catch2/internal/catch_commandline.cpp
+@@ -209,6 +209,16 @@ namespace Catch {
+             return ParserResult::ok( ParseResultType::Matched );
+         };
+ 
++        auto const setRetryFailed = [&]( std::string const& retries ) {
++            auto parsedRetries = parseUInt( retries );
++            if ( !parsedRetries ) {
++                return ParserResult::runtimeError(
++                    "Could not parse '" + retries + "' as retry count" );
++            }
++            config.retryFailed = *parsedRetries;
++            return ParserResult::ok( ParseResultType::Matched );
++        };
++
+         auto const setShardIndex = [&](std::string const& shardIndex) {
+             auto parsedIndex = parseUInt( shardIndex );
+             if ( !parsedIndex ) {
+@@ -286,6 +296,9 @@ namespace Catch {
+             | Opt( [&]( int x ){ config.abortAfter = x; }, "no. failures" )
+                 ["-x"]["--abortx"]
+                 ( "abort after x failures" )
++            | Opt( setRetryFailed, "retries" )
++                ["--retry-failed"]
++                ( "number of times to retry a failed test case after its first attempt (default: 0)" )
+             | Opt( accept_many, setWarning, "warning name" )
+                 ["-w"]["--warn"]
+                 ( "enable warnings" )
+diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
+index 469e3f3d..43b4c545 100644
+--- a/tests/CMakeLists.txt
++++ b/tests/CMakeLists.txt
+@@ -633,6 +633,95 @@ set_tests_properties("Reporters::JUnit::NamespacesAreNormalized"
+     PASS_REGULAR_EXPRESSION "testcase classname=\"SelfTest(\.exe)?\\.A\\.B\\.TestClass\""
+ )
+ 
++add_test(NAME "RetryFailed::Help" COMMAND $<TARGET_FILE:SelfTest> -h)
++set_tests_properties("RetryFailed::Help"
++  PROPERTIES
++    PASS_REGULAR_EXPRESSION "  --retry-failed <retries>[ \t\r\n]+number of times to retry a failed[ \t\r\n]+test case after its first attempt[ \t\r\n]+\\(default: 0\\)"
++    FAIL_REGULAR_EXPRESSION "-[a-zA-Z], --retry-failed"
++)
++
++# Invalid --retry-failed values are reported through the normal command-line
++# error path, before any test case runs or any reporter writes output.
++add_test(NAME "RetryFailed::CliError::MissingValue"
++  COMMAND $<TARGET_FILE:SelfTest> "Factorials are computed" --retry-failed
++)
++set_tests_properties("RetryFailed::CliError::MissingValue"
++  PROPERTIES
++    PASS_REGULAR_EXPRESSION "Error\\(s\\) in input:[ \t\r\n]+Expected argument following --retry-failed"
++    FAIL_REGULAR_EXPRESSION "Randomness seeded|All tests passed|test cases"
++)
++
++add_test(NAME "RetryFailed::CliError::Negative"
++  COMMAND $<TARGET_FILE:SelfTest> --retry-failed -1 "Factorials are computed"
++)
++set_tests_properties("RetryFailed::CliError::Negative"
++  PROPERTIES
++    PASS_REGULAR_EXPRESSION "Error\\(s\\) in input:[ \t\r\n]+Expected argument following --retry-failed"
++    FAIL_REGULAR_EXPRESSION "Randomness seeded|All tests passed|test cases"
++)
++
++add_test(NAME "RetryFailed::CliError::NotANumber"
++  COMMAND $<TARGET_FILE:SelfTest> --retry-failed abc "Factorials are computed"
++)
++set_tests_properties("RetryFailed::CliError::NotANumber"
++  PROPERTIES
++    PASS_REGULAR_EXPRESSION "Error\\(s\\) in input:[ \t\r\n]+Could not parse 'abc' as retry count"
++    FAIL_REGULAR_EXPRESSION "Randomness seeded|All tests passed|test cases"
++)
++
++add_test(NAME "RetryFailed::CliError::Fraction"
++  COMMAND $<TARGET_FILE:SelfTest> --retry-failed 1.5 "Factorials are computed"
++)
++set_tests_properties("RetryFailed::CliError::Fraction"
++  PROPERTIES
++    PASS_REGULAR_EXPRESSION "Error\\(s\\) in input:[ \t\r\n]+Could not parse '1\\.5' as retry count"
++    FAIL_REGULAR_EXPRESSION "Randomness seeded|All tests passed|test cases"
++)
++
++add_test(NAME "RetryFailed::CliError::Exponent"
++  COMMAND $<TARGET_FILE:SelfTest> --retry-failed 1e3 "Factorials are computed"
++)
++set_tests_properties("RetryFailed::CliError::Exponent"
++  PROPERTIES
++    PASS_REGULAR_EXPRESSION "Error\\(s\\) in input:[ \t\r\n]+Could not parse '1e3' as retry count"
++    FAIL_REGULAR_EXPRESSION "Randomness seeded|All tests passed|test cases"
++)
++
++add_test(NAME "RetryFailed::CliError::Hexadecimal"
++  COMMAND $<TARGET_FILE:SelfTest> --retry-failed 0x10 "Factorials are computed"
++)
++set_tests_properties("RetryFailed::CliError::Hexadecimal"
++  PROPERTIES
++    PASS_REGULAR_EXPRESSION "Error\\(s\\) in input:[ \t\r\n]+Could not parse '0x10' as retry count"
++    FAIL_REGULAR_EXPRESSION "Randomness seeded|All tests passed|test cases"
++)
++
++add_test(NAME "RetryFailed::CliError::TooLarge"
++  COMMAND $<TARGET_FILE:SelfTest> --retry-failed 4294967296 "Factorials are computed"
++)
++set_tests_properties("RetryFailed::CliError::TooLarge"
++  PROPERTIES
++    PASS_REGULAR_EXPRESSION "Error\\(s\\) in input:[ \t\r\n]+Could not parse '4294967296' as retry count"
++    FAIL_REGULAR_EXPRESSION "Randomness seeded|All tests passed|test cases"
++)
++
++add_test(NAME "RetryFailed::CliError::Repeated"
++  COMMAND $<TARGET_FILE:SelfTest> --retry-failed 1 --retry-failed 2 "Factorials are computed"
++)
++set_tests_properties("RetryFailed::CliError::Repeated"
++  PROPERTIES
++    PASS_REGULAR_EXPRESSION "Error\\(s\\) in input:[ \t\r\n]+Unrecognised token: --retry-failed"
++    FAIL_REGULAR_EXPRESSION "Randomness seeded|All tests passed|test cases"
++)
++
++add_test(NAME "RetryFailed::CliError::ExitCode"
++  COMMAND $<TARGET_FILE:SelfTest> --retry-failed abc "Factorials are computed"
++)
++set_tests_properties("RetryFailed::CliError::ExitCode"
++  PROPERTIES
++    WILL_FAIL ON
++)
++
+ if(CATCH_ENABLE_CONFIGURE_TESTS)
+   foreach(testName "DefaultReporter" "Disable" "DisableStringification"
+                     "ExperimentalRedirect")
+diff --git a/tests/SelfTest/IntrospectiveTests/CmdLine.tests.cpp b/tests/SelfTest/IntrospectiveTests/CmdLine.tests.cpp
+index 71ddc6fd..b8edfb48 100644
+--- a/tests/SelfTest/IntrospectiveTests/CmdLine.tests.cpp
++++ b/tests/SelfTest/IntrospectiveTests/CmdLine.tests.cpp
+@@ -17,6 +17,9 @@
+ #include <catch2/generators/catch_generators.hpp>
+ #include <catch2/internal/catch_compiler_capabilities.hpp>
+ 
++#include <string>
++#include <utility>
++
+ 
+ namespace {
+     auto fakeTestCase(const char* name, const char* desc = "") { return Catch::makeTestCaseInfo("", { name, desc }, CATCH_INTERNAL_LINEINFO); }
+@@ -398,6 +401,99 @@ TEST_CASE("Parsing sharding-related cli flags", "[sharding]") {
+     }
+ }
+ 
++// Tagged [approvals] so that the approval baselines stay unchanged
++TEST_CASE( "Parsing retry-failed cli flag",
++           "[approvals][cli][command-line][retry-failed]" ) {
++    using namespace Catch::Matchers;
++
++    Catch::ConfigData config;
++    auto cli = Catch::makeCommandLineParser( config );
++
++    SECTION( "Defaults to no retries" ) {
++        CHECK( cli.parse( { "test" } ) );
++
++        REQUIRE( config.retryFailed == 0 );
++        Catch::Config cfg( config );
++        Catch::IConfig const& iconfig = cfg;
++        REQUIRE( iconfig.retryFailed() == 0 );
++    }
++
++    SECTION( "Accepted values are stored and visible through IConfig" ) {
++        auto value = GENERATE( as<std::pair<std::string, unsigned int>>{},
++                               std::make_pair( "0", 0u ),
++                               std::make_pair( "1", 1u ),
++                               std::make_pair( "3", 3u ),
++                               std::make_pair( "+3", 3u ),
++                               std::make_pair( "003", 3u ),
++                               std::make_pair( " 3 ", 3u ),
++                               std::make_pair( "4294967295", 4294967295u ) );
++        CAPTURE( value.first );
++
++        CHECK( cli.parse( { "test", "--retry-failed", value.first } ) );
++
++        REQUIRE( config.retryFailed == value.second );
++        Catch::Config cfg( config );
++        Catch::IConfig const& iconfig = cfg;
++        REQUIRE( iconfig.retryFailed() == value.second );
++    }
++
++    SECTION( "The '=' form is accepted" ) {
++        CHECK( cli.parse( { "test", "--retry-failed=2" } ) );
++
++        REQUIRE( config.retryFailed == 2 );
++    }
++
++    SECTION( "Malformed values report an error" ) {
++        auto value = GENERATE( as<std::string>{},
++                               "-1",
++                               "abc",
++                               "1.5",
++                               "1e3",
++                               "0x10",
++                               "4294967296",
++                               "" );
++        CAPTURE( value );
++
++        auto const argument = "--retry-failed=" + value;
++        auto result = cli.parse( { "test", argument } );
++
++        CHECK_FALSE( result );
++        REQUIRE_THAT( result.errorMessage(),
++                      ContainsSubstring( "Could not parse '" + value +
++                                         "' as retry count" ) );
++    }
++
++    SECTION( "Negative value as a separate argument reports an error" ) {
++        auto result = cli.parse( { "test", "--retry-failed", "-1" } );
++
++        CHECK_FALSE( result );
++        REQUIRE_THAT( result.errorMessage(),
++                      ContainsSubstring( "Expected argument following --retry-failed" ) );
++    }
++
++    SECTION( "Missing value reports an error" ) {
++        auto result = cli.parse( { "test", "--retry-failed" } );
++
++        CHECK_FALSE( result );
++        REQUIRE_THAT( result.errorMessage(),
++                      ContainsSubstring( "Expected argument following --retry-failed" ) );
++    }
++
++    SECTION( "Repeating the option reports an error" ) {
++        auto result =
++            cli.parse( { "test", "--retry-failed", "1", "--retry-failed", "2" } );
++
++        CHECK_FALSE( result );
++        REQUIRE_THAT( result.errorMessage(),
++                      ContainsSubstring( "Unrecognised token: --retry-failed" ) );
++    }
++
++    SECTION( "Custom configurations default to no retries" ) {
++        Catch::Config cfg( config );
++        REQUIRE( cfg.Catch::IConfig::retryFailed() == 0 );
++    }
++}
++
+ TEST_CASE( "Parsing warnings", "[cli][warnings]" ) {
+     using Catch::WarnAbout;
+ 
+-- 
+2.56.0.windows.1
+
