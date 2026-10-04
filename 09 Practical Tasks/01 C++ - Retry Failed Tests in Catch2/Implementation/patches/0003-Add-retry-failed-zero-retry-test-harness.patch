@@ -1,0 +1,534 @@
+From 57c5840d03a25a745d1f043d8454078d21c0bee9 Mon Sep 17 00:00:00 2001
+From: Aliaksei Ivanou <aliaksei.ivanou@innowise.com>
+Date: Sun, 4 Oct 2026 19:09:59 +0200
+Subject: [PATCH] Add retry-failed zero-retry test harness
+
+Add hidden counting-fixture tests, a nesting-checking retry-recorder reporter, and a legacy reporter/listener that use only the pre-attempt API. Drive them from RetryFailed::Scenarios and compare omitted versus explicit zero retry output for the recorder, XML, and JSON reporters.
+
+Tests: phase6-validate.ps1 -Task T03 -Preset all -Filter RetryFailed (focused 11/11, full 156/156).
+---
+ tests/ExtraTests/CMakeLists.txt      |  15 ++
+ tests/ExtraTests/X96-RetryFailed.cpp | 322 +++++++++++++++++++++++++++
+ tests/TestScripts/testRetryFailed.py | 148 ++++++++++++
+ 3 files changed, 485 insertions(+)
+ create mode 100644 tests/ExtraTests/X96-RetryFailed.cpp
+ create mode 100644 tests/TestScripts/testRetryFailed.py
+
+diff --git a/tests/ExtraTests/CMakeLists.txt b/tests/ExtraTests/CMakeLists.txt
+index a7b78748..7b813617 100644
+--- a/tests/ExtraTests/CMakeLists.txt
++++ b/tests/ExtraTests/CMakeLists.txt
+@@ -663,6 +663,20 @@ set_tests_properties(Warnings::InfiniteGenerators::SectionFilterWarns
+     TIMEOUT 5
+ )
+ 
++add_executable(RetryFailed ${TESTS_DIR}/X96-RetryFailed.cpp)
++target_link_libraries(RetryFailed PRIVATE Catch2::Catch2WithMain)
++
++add_test(
++  NAME RetryFailed::Scenarios
++  COMMAND Python3::Interpreter
++    ${CATCH_DIR}/tests/TestScripts/testRetryFailed.py
++    $<TARGET_FILE:RetryFailed>
++)
++set_tests_properties(RetryFailed::Scenarios
++  PROPERTIES
++    LABELS "uses-python"
++)
++
+ 
+ set(EXTRA_TEST_BINARIES
+   AllSkipped
+@@ -681,6 +695,7 @@ set(EXTRA_TEST_BINARIES
+   MixingClearedAndUnclearedMessages
+   FastCompileMacros
+   InfiniteGenerators
++  RetryFailed
+   ThreadSafetyTests
+ #  DebugBreakMacros
+ )
+diff --git a/tests/ExtraTests/X96-RetryFailed.cpp b/tests/ExtraTests/X96-RetryFailed.cpp
+new file mode 100644
+index 00000000..8e289a72
+--- /dev/null
++++ b/tests/ExtraTests/X96-RetryFailed.cpp
+@@ -0,0 +1,322 @@
++//              Copyright Catch2 Authors
++// Distributed under the Boost Software License, Version 1.0.
++//   (See accompanying file LICENSE.txt or copy at
++//        https://www.boost.org/LICENSE_1_0.txt)
++
++// SPDX-License-Identifier: BSL-1.0
++
++/**\file
++ * Test executable used by the --retry-failed integration scenarios.
++ *
++ * All test cases are hidden so that they can only affect a run that selects
++ * them explicitly. The retry-recorder reporter intentionally records the
++ * complete test-case/attempt/partial-run envelope and validates its nesting.
++ */
++
++#include <catch2/catch_test_case_info.hpp>
++#include <catch2/catch_test_macros.hpp>
++#include <catch2/internal/catch_enforce.hpp>
++#include <catch2/reporters/catch_reporter_event_listener.hpp>
++#include <catch2/reporters/catch_reporter_registrars.hpp>
++#include <catch2/reporters/catch_reporter_streaming_base.hpp>
++
++#include <cstdint>
++#include <iostream>
++#include <string>
++#include <utility>
++
++namespace {
++
++    std::string escapeOutput( std::string const& value ) {
++        std::string escaped;
++        escaped.reserve( value.size() );
++        for ( char c : value ) {
++            switch ( c ) {
++            case '\\': escaped += "\\\\"; break;
++            case '"': escaped += "\\\""; break;
++            case '\n': escaped += "\\n"; break;
++            case '\r': escaped += "\\r"; break;
++            case '\t': escaped += "\\t"; break;
++            default: escaped += c; break;
++            }
++        }
++        return escaped;
++    }
++
++    void writeCounts( std::ostream& stream, Catch::Counts const& counts ) {
++        stream << "passed=" << counts.passed << ",failed=" << counts.failed
++               << ",failed-but-ok=" << counts.failedButOk
++               << ",skipped=" << counts.skipped;
++    }
++
++    void writeStats( std::ostream& stream, Catch::TestCaseStats const& stats ) {
++        stream << " assertions={";
++        writeCounts( stream, stats.totals.assertions );
++        stream << "} test-cases={";
++        writeCounts( stream, stats.totals.testCases );
++        stream << "} aborting=" << ( stats.aborting ? "true" : "false" )
++               << " out=\"" << escapeOutput( stats.stdOut ) << "\""
++               << " err=\"" << escapeOutput( stats.stdErr ) << "\"";
++    }
++
++    void writeStats( std::ostream& stream,
++                     Catch::TestCaseAttemptStats const& stats ) {
++        stream << " assertions={";
++        writeCounts( stream, stats.totals.assertions );
++        stream << "} test-cases={";
++        writeCounts( stream, stats.totals.testCases );
++        stream << "} aborting=" << ( stats.aborting ? "true" : "false" )
++               << " final=" << ( stats.isFinal ? "true" : "false" )
++               << " out=\"" << escapeOutput( stats.stdOut ) << "\""
++               << " err=\"" << escapeOutput( stats.stdErr ) << "\"";
++    }
++
++    class RetryRecorder final : public Catch::StreamingReporterBase {
++        Catch::TestCaseInfo const* m_testCase = nullptr;
++        bool m_attemptOpen = false;
++        bool m_partialRunOpen = false;
++        std::uint64_t m_attemptNumber = 0;
++        std::uint64_t m_maxAttempts = 0;
++        std::uint64_t m_partNumber = 0;
++
++        void enforceTestCase( Catch::TestCaseInfo const* testInfo ) const {
++            CATCH_ENFORCE( m_testCase == testInfo,
++                           "retry-recorder received an event for the wrong test case" );
++        }
++
++    public:
++        explicit RetryRecorder( Catch::ReporterConfig&& config ):
++            StreamingReporterBase( CATCH_MOVE( config ) ) {
++            m_preferences.shouldRedirectStdOut = true;
++            m_preferences.shouldReportAllAssertionStarts = false;
++        }
++
++        static std::string getDescription() {
++            return "Records retry-related test case events";
++        }
++
++        void testCaseStarting( Catch::TestCaseInfo const& testInfo ) override {
++            CATCH_ENFORCE( !m_testCase && !m_attemptOpen && !m_partialRunOpen,
++                           "retry-recorder observed overlapping test cases" );
++            m_testCase = &testInfo;
++            StreamingReporterBase::testCaseStarting( testInfo );
++            m_stream << "test-case-starting name=\"" << testInfo.name
++                     << "\"\n";
++        }
++
++        void testCaseAttemptStarting(
++            Catch::TestCaseAttemptInfo const& attemptInfo ) override {
++            enforceTestCase( attemptInfo.testInfo );
++            CATCH_ENFORCE( !m_attemptOpen && !m_partialRunOpen,
++                           "retry-recorder observed overlapping attempts" );
++            CATCH_ENFORCE( attemptInfo.attemptNumber > 0 &&
++                               attemptInfo.attemptNumber <=
++                                   attemptInfo.maxAttempts,
++                           "retry-recorder received invalid attempt numbers" );
++            m_attemptOpen = true;
++            m_attemptNumber = attemptInfo.attemptNumber;
++            m_maxAttempts = attemptInfo.maxAttempts;
++            m_stream << "test-case-attempt-starting name=\""
++                     << attemptInfo.testInfo->name << "\" attempt="
++                     << attemptInfo.attemptNumber << '/'
++                     << attemptInfo.maxAttempts << '\n';
++        }
++
++        void testCasePartialStarting( Catch::TestCaseInfo const& testInfo,
++                                      std::uint64_t partNumber ) override {
++            enforceTestCase( &testInfo );
++            CATCH_ENFORCE( !m_partialRunOpen,
++                           "retry-recorder observed overlapping partial runs" );
++            CATCH_ENFORCE( m_attemptOpen == ( m_config->retryFailed() > 0 ),
++                           "retry-recorder observed an attempt nesting mismatch" );
++            m_partialRunOpen = true;
++            m_partNumber = partNumber;
++            m_stream << "test-case-partial-starting name=\"" << testInfo.name
++                     << "\" part=" << partNumber << '\n';
++        }
++
++        void testCasePartialEnded( Catch::TestCaseStats const& stats,
++                                   std::uint64_t partNumber ) override {
++            enforceTestCase( stats.testInfo );
++            CATCH_ENFORCE( m_partialRunOpen && m_partNumber == partNumber,
++                           "retry-recorder received an unmatched partial end" );
++            m_stream << "test-case-partial-ended name=\""
++                     << stats.testInfo->name << "\" part=" << partNumber;
++            writeStats( m_stream, stats );
++            m_stream << '\n';
++            m_partialRunOpen = false;
++        }
++
++        void testCaseAttemptEnded(
++            Catch::TestCaseAttemptStats const& stats ) override {
++            enforceTestCase( stats.testInfo );
++            CATCH_ENFORCE( m_attemptOpen && !m_partialRunOpen,
++                           "retry-recorder received an unmatched attempt end" );
++            CATCH_ENFORCE( m_attemptNumber == stats.attemptNumber &&
++                               m_maxAttempts == stats.maxAttempts,
++                           "retry-recorder received mismatched attempt numbers" );
++            m_stream << "test-case-attempt-ended name=\""
++                     << stats.testInfo->name << "\" attempt="
++                     << stats.attemptNumber << '/' << stats.maxAttempts;
++            writeStats( m_stream, stats );
++            m_stream << '\n';
++            m_attemptOpen = false;
++        }
++
++        void testCaseEnded( Catch::TestCaseStats const& stats ) override {
++            enforceTestCase( stats.testInfo );
++            CATCH_ENFORCE( !m_attemptOpen && !m_partialRunOpen,
++                           "retry-recorder ended a test case with an open child event" );
++            m_stream << "test-case-ended name=\"" << stats.testInfo->name
++                     << "\" attempts=" << stats.attemptCount << '/'
++                     << stats.maxAttempts
++                     << " flaky=" << ( stats.isFlaky ? "true" : "false" );
++            writeStats( m_stream, stats );
++            m_stream << '\n';
++            StreamingReporterBase::testCaseEnded( stats );
++            m_testCase = nullptr;
++        }
++
++        void testRunEnded( Catch::TestRunStats const& stats ) override {
++            CATCH_ENFORCE( !m_testCase && !m_attemptOpen && !m_partialRunOpen,
++                           "retry-recorder ended the run with an open event" );
++            StreamingReporterBase::testRunEnded( stats );
++        }
++    };
++
++    struct LegacyEventCounts {
++        unsigned int runStarting = 0;
++        unsigned int testCaseStarting = 0;
++        unsigned int partialStarting = 0;
++        unsigned int partialEnded = 0;
++        unsigned int testCaseEnded = 0;
++        unsigned int runEnded = 0;
++    };
++
++    LegacyEventCounts legacyListenerCounts;
++
++    // This listener intentionally implements only the reporter API that
++    // existed before retry attempt events were added.
++    class LegacyListener final : public Catch::EventListenerBase {
++    public:
++        using EventListenerBase::EventListenerBase;
++
++        void testRunStarting( Catch::TestRunInfo const& ) override {
++            ++legacyListenerCounts.runStarting;
++        }
++        void testCaseStarting( Catch::TestCaseInfo const& ) override {
++            ++legacyListenerCounts.testCaseStarting;
++        }
++        void testCasePartialStarting( Catch::TestCaseInfo const&,
++                                      std::uint64_t ) override {
++            ++legacyListenerCounts.partialStarting;
++        }
++        void testCasePartialEnded( Catch::TestCaseStats const&,
++                                   std::uint64_t ) override {
++            ++legacyListenerCounts.partialEnded;
++        }
++        void testCaseEnded( Catch::TestCaseStats const& ) override {
++            ++legacyListenerCounts.testCaseEnded;
++        }
++        void testRunEnded( Catch::TestRunStats const& ) override {
++            ++legacyListenerCounts.runEnded;
++        }
++    };
++
++    // This reporter also intentionally implements only the pre-attempt API.
++    class LegacyReporter final : public Catch::StreamingReporterBase {
++        LegacyEventCounts m_counts;
++
++    public:
++        explicit LegacyReporter( Catch::ReporterConfig&& config ):
++            StreamingReporterBase( CATCH_MOVE( config ) ) {
++            m_preferences.shouldRedirectStdOut = true;
++        }
++
++        static std::string getDescription() {
++            return "Exercises a reporter without retry attempt callbacks";
++        }
++
++        void testRunStarting( Catch::TestRunInfo const& ) override {
++            ++m_counts.runStarting;
++        }
++        void testCaseStarting( Catch::TestCaseInfo const& ) override {
++            ++m_counts.testCaseStarting;
++        }
++        void testCasePartialStarting( Catch::TestCaseInfo const&,
++                                      std::uint64_t ) override {
++            ++m_counts.partialStarting;
++        }
++        void testCasePartialEnded( Catch::TestCaseStats const&,
++                                   std::uint64_t ) override {
++            ++m_counts.partialEnded;
++        }
++        void testCaseEnded( Catch::TestCaseStats const& ) override {
++            ++m_counts.testCaseEnded;
++        }
++        void testRunEnded( Catch::TestRunStats const& ) override {
++            ++m_counts.runEnded;
++            m_stream << "legacy-reporter"
++                     << " reporter=" << m_counts.runStarting << ','
++                     << m_counts.testCaseStarting << ','
++                     << m_counts.partialStarting << ',' << m_counts.partialEnded
++                     << ',' << m_counts.testCaseEnded << ',' << m_counts.runEnded
++                     << " listener=" << legacyListenerCounts.runStarting << ','
++                     << legacyListenerCounts.testCaseStarting << ','
++                     << legacyListenerCounts.partialStarting << ','
++                     << legacyListenerCounts.partialEnded << ','
++                     << legacyListenerCounts.testCaseEnded << ','
++                     << legacyListenerCounts.runEnded << '\n';
++        }
++    };
++
++    struct CountingFixture {
++        static unsigned int constructions;
++        static unsigned int destructions;
++
++        unsigned int const instance;
++
++        CountingFixture(): instance( ++constructions ) {
++            std::cout << "fixture-ctor=" << instance << '\n';
++        }
++
++        ~CountingFixture() {
++            ++destructions;
++            std::cout << "fixture-dtor=" << instance << '\n';
++        }
++    };
++
++    unsigned int CountingFixture::constructions = 0;
++    unsigned int CountingFixture::destructions = 0;
++
++} // namespace
++
++CATCH_REGISTER_REPORTER( "retry-recorder", RetryRecorder )
++CATCH_REGISTER_REPORTER( "legacy-reporter", LegacyReporter )
++CATCH_REGISTER_LISTENER( LegacyListener )
++
++TEST_CASE_METHOD( CountingFixture,
++                  "retry zero fixture passes",
++                  "[.retry-zero]" ) {
++    std::cout << "body=pass instance=" << instance << '\n';
++    std::cerr << "body-err=pass instance=" << instance << '\n';
++    CHECK( instance == constructions );
++    CHECK( constructions == destructions + 1 );
++}
++
++TEST_CASE_METHOD( CountingFixture,
++                  "retry zero fixture sections",
++                  "[.retry-zero]" ) {
++    std::cout << "body=sections instance=" << instance << '\n';
++    CHECK( instance == constructions );
++    CHECK( constructions == destructions + 1 );
++
++    SECTION( "A" ) {
++        std::cout << "section=A instance=" << instance << '\n';
++        CHECK( instance >= 2 );
++    }
++    SECTION( "B" ) {
++        std::cout << "section=B instance=" << instance << '\n';
++        CHECK( instance >= 2 );
++    }
++}
+diff --git a/tests/TestScripts/testRetryFailed.py b/tests/TestScripts/testRetryFailed.py
+new file mode 100644
+index 00000000..097d6963
+--- /dev/null
++++ b/tests/TestScripts/testRetryFailed.py
+@@ -0,0 +1,148 @@
++#!/usr/bin/env python3
++
++#              Copyright Catch2 Authors
++# Distributed under the Boost Software License, Version 1.0.
++#   (See accompanying file LICENSE.txt or copy at
++#        https://www.boost.org/LICENSE_1_0.txt)
++
++# SPDX-License-Identifier: BSL-1.0
++
++"""Integration scenarios for Catch2's --retry-failed support."""
++
++import json
++from pathlib import Path
++import subprocess
++import sys
++import tempfile
++import xml.etree.ElementTree as ET
++
++
++TEST_SPEC = "[.retry-zero]"
++COMMON_ARGUMENTS = [
++    TEST_SPEC,
++    "--order",
++    "lex",
++    "--rng-seed",
++    "123456789",
++    "--colour-mode",
++    "none",
++]
++
++
++def run_reporter(test_exe, output_dir, reporter, suffix, retry_arguments=()):
++    output_path = output_dir / "{}-{}.txt".format(reporter, suffix)
++    command = [
++        test_exe,
++        *COMMON_ARGUMENTS,
++        *retry_arguments,
++        "--reporter",
++        "{}::out={}".format(reporter, output_path),
++    ]
++    result = subprocess.run(
++        command,
++        stdout=subprocess.PIPE,
++        stderr=subprocess.PIPE,
++        timeout=20,
++        check=False,
++        universal_newlines=True,
++    )
++    assert result.returncode == 0, (
++        "Command failed with exit code {}:\n{}\nstdout:\n{}\nstderr:\n{}".format(
++            result.returncode, command, result.stdout, result.stderr
++        )
++    )
++    assert result.stdout == "", "Unexpected stdout:\n{}".format(result.stdout)
++    assert result.stderr == "", "Unexpected stderr:\n{}".format(result.stderr)
++    return output_path.read_text(encoding="utf-8")
++
++
++def assert_recorder_baseline(output):
++    lines = output.splitlines()
++    expected_event_counts = {
++        "test-case-starting ": 2,
++        "test-case-partial-starting ": 3,
++        "test-case-partial-ended ": 3,
++        "test-case-ended ": 2,
++    }
++    for prefix, expected_count in expected_event_counts.items():
++        actual_count = sum(line.startswith(prefix) for line in lines)
++        assert actual_count == expected_count, (
++            "Expected {} '{}' events, got {}:\n{}".format(
++                expected_count, prefix.strip(), actual_count, output
++            )
++        )
++
++    assert not any(
++        line.startswith("test-case-attempt-") for line in lines
++    ), (
++        "Attempt events must not be emitted when retries are disabled:\n{}".format(
++            output
++        )
++    )
++    ended = [line for line in lines if line.startswith("test-case-ended ")]
++    assert all("attempts=1/1 flaky=false" in line for line in ended), output
++    assert any('out="fixture-ctor=1\\nbody=pass instance=1' in line for line in ended), output
++    assert any('err="body-err=pass instance=1\\n"' in line for line in ended), output
++
++
++def assert_no_json_attempt_keys(value):
++    if isinstance(value, dict):
++        assert "attempt" not in value
++        assert "attempts" not in value
++        for child in value.values():
++            assert_no_json_attempt_keys(child)
++    elif isinstance(value, list):
++        for child in value:
++            assert_no_json_attempt_keys(child)
++
++
++def main():
++    test_exe, = sys.argv[1:]
++
++    with tempfile.TemporaryDirectory(prefix="catch2-retry-failed-") as temp_dir:
++        output_dir = Path(temp_dir)
++
++        for reporter in ("retry-recorder", "xml", "json"):
++            omitted = run_reporter(test_exe, output_dir, reporter, "omitted")
++            explicit_zero = run_reporter(
++                test_exe,
++                output_dir,
++                reporter,
++                "zero",
++                ("--retry-failed", "0"),
++            )
++            assert omitted == explicit_zero, (
++                "{} output differs between an omitted --retry-failed option "
++                "and --retry-failed 0\nomitted:\n{}\nexplicit zero:\n{}".format(
++                    reporter, omitted, explicit_zero
++                )
++            )
++
++            if reporter == "retry-recorder":
++                assert_recorder_baseline(omitted)
++            elif reporter == "xml":
++                root = ET.fromstring(omitted)
++                assert root.findall(".//Attempt") == []
++                assert all(
++                    key not in {"attempt", "attempts", "maxAttempts", "flaky"}
++                    for element in root.iter()
++                    for key in element.attrib
++                )
++            else:
++                assert_no_json_attempt_keys(json.loads(omitted))
++
++        legacy_output = run_reporter(
++            test_exe,
++            output_dir,
++            "legacy-reporter",
++            "zero",
++            ("--retry-failed", "0"),
++        )
++        assert legacy_output == (
++            "legacy-reporter reporter=1,2,3,3,2,1 "
++            "listener=1,2,3,3,2,1\n"
++        ), legacy_output
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+-- 
+2.56.0.windows.1
+
