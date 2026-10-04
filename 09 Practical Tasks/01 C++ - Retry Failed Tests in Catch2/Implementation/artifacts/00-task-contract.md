@@ -1,6 +1,6 @@
 # Phase 0 Task Contract
 
-Status: Accepted on 2026-10-02\
+Status: Accepted\
 Task: Add opt-in retry support for failed test cases to Catch2  
 Baseline: Catch2 `v3.16.0`
 
@@ -63,6 +63,7 @@ Use this order when evidence conflicts:
 Allowed:
 
 - Read and edit local files within this task's course artifacts and the future local Catch2 checkout.
+- Create and use CMake build directories under `C:\build\Course_AI\catch2\` (for example `basic-test-build`, `debug-build`). They hold generated build output only; source edits stay in the local Catch2 checkout. Added with the reviewer's approval during Phase 1 because of the Windows path-length limit; see [01-baseline.md](01-baseline.md).
 - Configure, build, test, inspect diffs, and create local commits after the relevant human gates pass.
 - If a required build or test tool is missing, install it through `winget` or `pip` from the package manager's official sources, and record the command and installed version in the relevant phase artifact.
 - Use the network only for the official Catch2 repository, official Catch2 documentation, and official package sources accessed through `winget` or `pip` for required tools.
@@ -95,7 +96,7 @@ Use one primary agent. Specialized help is unnecessary for Phase 0 and may be co
 
 ## Human Confirmation
 
-Accepted by the human reviewer on 2026-10-02:
+Accepted by the human reviewer:
 
 1. This objective, scope, definition of done, and permission boundary are accepted.
 2. Work should continue with one primary agent under the phase gates in [Implementation/README.md](../README.md).
