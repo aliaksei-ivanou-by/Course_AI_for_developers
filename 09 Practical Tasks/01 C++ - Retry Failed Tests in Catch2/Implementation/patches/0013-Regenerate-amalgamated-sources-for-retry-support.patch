@@ -1,0 +1,1670 @@
+From ba8f35b06b7b9154372dc33d23dc410316af8da5 Mon Sep 17 00:00:00 2001
+From: Aliaksei Ivanou <aliaksei.ivanou@innowise.com>
+Date: Sun, 4 Oct 2026 20:51:13 +0200
+Subject: [PATCH] Regenerate amalgamated sources for retry support
+
+---
+ extras/catch_amalgamated.cpp                  | 752 +++++++++++++++---
+ extras/catch_amalgamated.hpp                  | 182 ++++-
+ src/catch2/reporters/catch_reporter_junit.cpp |  14 +-
+ .../reporters/catch_reporter_sonarqube.cpp    |  14 +-
+ 4 files changed, 851 insertions(+), 111 deletions(-)
+
+diff --git a/extras/catch_amalgamated.cpp b/extras/catch_amalgamated.cpp
+index 73ef255d..856f8a4f 100644
+--- a/extras/catch_amalgamated.cpp
++++ b/extras/catch_amalgamated.cpp
+@@ -7,7 +7,7 @@
+ // SPDX-License-Identifier: BSL-1.0
+ 
+ //  Catch v3.16.0
+-//  Generated: 2026-08-25 09:29:23.172704
++//  Generated: 2026-10-04 20:38:30.501511
+ //  ----------------------------------------------------------
+ //  This file is an amalgamation of multiple different files.
+ //  You probably shouldn't edit it directly.
+@@ -969,6 +969,7 @@ namespace Catch {
+     ColourMode Config::defaultColourMode() const       { return m_data.defaultColourMode; }
+     bool Config::shouldDebugBreak() const              { return m_data.shouldDebugBreak; }
+     int Config::abortAfter() const                     { return m_data.abortAfter; }
++    unsigned int Config::retryFailed() const           { return m_data.retryFailed; }
+     bool Config::showInvisibles() const                { return m_data.showInvisibles; }
+     Verbosity Config::verbosity() const                { return m_data.verbosity; }
+ 
+@@ -2578,6 +2579,8 @@ namespace Catch {
+ 
+ namespace Catch {
+     IConfig::~IConfig() = default;
++
++    unsigned int IConfig::retryFailed() const { return 0; }
+ }
+ 
+ 
+@@ -2724,6 +2727,31 @@ namespace Catch {
+     {}
+ 
+ 
++    TestCaseAttemptInfo::TestCaseAttemptInfo( TestCaseInfo const& _testInfo,
++                                              std::uint64_t _attemptNumber,
++                                              std::uint64_t _maxAttempts ):
++        testInfo( &_testInfo ),
++        attemptNumber( _attemptNumber ),
++        maxAttempts( _maxAttempts ) {}
++
++    TestCaseAttemptStats::TestCaseAttemptStats( TestCaseInfo const& _testInfo,
++                                                std::uint64_t _attemptNumber,
++                                                std::uint64_t _maxAttempts,
++                                                Totals const& _totals,
++                                                std::string&& _stdOut,
++                                                std::string&& _stdErr,
++                                                bool _aborting,
++                                                bool _isFinal ):
++        testInfo( &_testInfo ),
++        attemptNumber( _attemptNumber ),
++        maxAttempts( _maxAttempts ),
++        totals( _totals ),
++        stdOut( CATCH_MOVE( _stdOut ) ),
++        stdErr( CATCH_MOVE( _stdErr ) ),
++        aborting( _aborting ),
++        isFinal( _isFinal ) {}
++
++
+     TestRunStats::TestRunStats(   TestRunInfo const& _runInfo,
+                     Totals const& _totals,
+                     bool _aborting )
+@@ -2734,6 +2762,9 @@ namespace Catch {
+ 
+     IEventListener::~IEventListener() = default;
+ 
++    void IEventListener::testCaseAttemptStarting( TestCaseAttemptInfo const& ) {}
++    void IEventListener::testCaseAttemptEnded( TestCaseAttemptStats const& ) {}
++
+ } // end namespace Catch
+ 
+ 
+@@ -3503,6 +3534,16 @@ namespace Catch {
+             return ParserResult::ok( ParseResultType::Matched );
+         };
+ 
++        auto const setRetryFailed = [&]( std::string const& retries ) {
++            auto parsedRetries = parseUInt( retries );
++            if ( !parsedRetries ) {
++                return ParserResult::runtimeError(
++                    "Could not parse '" + retries + "' as retry count" );
++            }
++            config.retryFailed = *parsedRetries;
++            return ParserResult::ok( ParseResultType::Matched );
++        };
++
+         auto const setShardIndex = [&](std::string const& shardIndex) {
+             auto parsedIndex = parseUInt( shardIndex );
+             if ( !parsedIndex ) {
+@@ -3580,6 +3621,9 @@ namespace Catch {
+             | Opt( [&]( int x ){ config.abortAfter = x; }, "no. failures" )
+                 ["-x"]["--abortx"]
+                 ( "abort after x failures" )
++            | Opt( setRetryFailed, "retries" )
++                ["--retry-failed"]
++                ( "number of times to retry a failed test case after its first attempt (default: 0)" )
+             | Opt( accept_many, setWarning, "warning name" )
+                 ["-w"]["--warn"]
+                 ( "enable warnings" )
+@@ -6325,11 +6369,85 @@ namespace Catch {
+     }
+ 
+     Totals RunContext::runTest(TestCaseHandle const& testCase) {
+-        updateTotalsFromAtomics();
+-        const Totals prevTotals = m_totals;
+-
+         auto const& testInfo = testCase.getTestCaseInfo();
+         m_reporter->testCaseStarting(testInfo);
++
++        auto const retryCount = m_config->retryFailed();
++        auto const maxAttempts =
++            static_cast<std::uint64_t>( retryCount ) + 1;
++        std::uint64_t retriesUsed = 0;
++        std::uint64_t testRuns = 0;
++        Totals finalTotals;
++        std::string redirectedCout;
++        std::string redirectedCerr;
++
++        while ( true ) {
++            updateTotalsFromAtomics();
++            const Totals totalsAtAttemptStart = m_totals;
++            const Counts assertionsAtAttemptStart = getAssertionCounts();
++            const std::uint64_t attemptNumber = retriesUsed + 1;
++
++            if ( retryCount > 0 ) {
++                m_activeTestCaseAttempt = attemptNumber;
++                m_maxTestCaseAttempts = maxAttempts;
++                m_reporter->testCaseAttemptStarting( TestCaseAttemptInfo(
++                    testInfo, attemptNumber, maxAttempts ) );
++            }
++
++            auto attemptResult = runTestAttempt(
++                testCase, totalsAtAttemptStart, testRuns );
++            finalTotals = attemptResult.totals;
++            redirectedCout += attemptResult.stdOut;
++            redirectedCerr += attemptResult.stdErr;
++
++            const bool retry =
++                attemptResult.totals.testCases.failed > 0 &&
++                retriesUsed < retryCount && !aborting();
++
++            if ( retryCount > 0 ) {
++                m_reporter->testCaseAttemptEnded( TestCaseAttemptStats(
++                    testInfo,
++                    attemptNumber,
++                    maxAttempts,
++                    attemptResult.totals,
++                    CATCH_MOVE( attemptResult.stdOut ),
++                    CATCH_MOVE( attemptResult.stdErr ),
++                    aborting(),
++                    !retry ) );
++                m_activeTestCaseAttempt = 0;
++                m_maxTestCaseAttempts = 0;
++            }
++
++            if ( !retry ) { break; }
++
++            setAssertionCounts( assertionsAtAttemptStart );
++            updateTotalsFromAtomics();
++            ++retriesUsed;
++        }
++
++        m_totals.testCases += finalTotals.testCases;
++        auto testCaseStats = TestCaseStats( testInfo,
++                                            finalTotals,
++                                            CATCH_MOVE( redirectedCout ),
++                                            CATCH_MOVE( redirectedCerr ),
++                                            aborting() );
++        testCaseStats.attemptCount = retriesUsed + 1;
++        testCaseStats.maxAttempts = maxAttempts;
++        testCaseStats.isFlaky =
++            retriesUsed > 0 && finalTotals.testCases.passed > 0;
++        m_reporter->testCaseEnded( testCaseStats );
++
++        m_activeTestCase = nullptr;
++        m_testCaseTracker = nullptr;
++
++        return finalTotals;
++    }
++
++    RunContext::TestCaseAttemptResult RunContext::runTestAttempt(
++        TestCaseHandle const& testCase,
++        Totals const& totalsAtAttemptStart,
++        std::uint64_t& testRuns ) {
++        auto const& testInfo = testCase.getTestCaseInfo();
+         testCase.prepareTestCase();
+         m_activeTestCase = &testCase;
+ 
+@@ -6372,7 +6490,6 @@ namespace Catch {
+         //  it had when the generator for i was initialized.)
+         seedRng( *m_config );
+ 
+-        uint64_t testRuns = 0;
+         std::string redirectedCout;
+         std::string redirectedCerr;
+         do {
+@@ -6398,24 +6515,17 @@ namespace Catch {
+             ++testRuns;
+         } while (!m_testCaseTracker->isSuccessfullyCompleted() && !aborting());
+ 
+-        Totals deltaTotals = m_totals.delta(prevTotals);
++        Totals deltaTotals = m_totals.delta(totalsAtAttemptStart);
+         if (testInfo.expectedToFail() && deltaTotals.testCases.passed > 0) {
+             deltaTotals.assertions.failed++;
+             deltaTotals.testCases.passed--;
+             deltaTotals.testCases.failed++;
+         }
+-        m_totals.testCases += deltaTotals.testCases;
+         testCase.tearDownTestCase();
+-        m_reporter->testCaseEnded(TestCaseStats(testInfo,
+-                                  deltaTotals,
+-                                  CATCH_MOVE(redirectedCout),
+-                                  CATCH_MOVE(redirectedCerr),
+-                                  aborting()));
+ 
+-        m_activeTestCase = nullptr;
+-        m_testCaseTracker = nullptr;
+-
+-        return deltaTotals;
++        return { deltaTotals,
++                 CATCH_MOVE( redirectedCout ),
++                 CATCH_MOVE( redirectedCerr ) };
+     }
+ 
+ 
+@@ -6683,11 +6793,25 @@ namespace Catch {
+         Totals deltaTotals;
+         deltaTotals.testCases.failed = 1;
+         deltaTotals.assertions.failed = 1;
+-        m_reporter->testCaseEnded(TestCaseStats(testInfo,
+-                                  deltaTotals,
+-                                  std::string(),
+-                                  std::string(),
+-                                  false));
++        auto testCaseStats = TestCaseStats( testInfo,
++                                            deltaTotals,
++                                            std::string(),
++                                            std::string(),
++                                            false );
++        if ( m_activeTestCaseAttempt > 0 ) {
++            m_reporter->testCaseAttemptEnded( TestCaseAttemptStats(
++                testInfo,
++                m_activeTestCaseAttempt,
++                m_maxTestCaseAttempts,
++                deltaTotals,
++                std::string(),
++                std::string(),
++                false,
++                true ) );
++            testCaseStats.attemptCount = m_activeTestCaseAttempt;
++            testCaseStats.maxAttempts = m_maxTestCaseAttempts;
++        }
++        m_reporter->testCaseEnded( testCaseStats );
+         m_totals.testCases.failed++;
+         updateTotalsFromAtomics();
+         m_reporter->testRunEnded(TestRunStats(m_runInfo, m_totals, false));
+@@ -6702,7 +6826,11 @@ namespace Catch {
+     }
+ 
+     void RunContext::updateTotalsFromAtomics() {
+-        m_totals.assertions = Counts{
++        m_totals.assertions = getAssertionCounts();
++    }
++
++    Counts RunContext::getAssertionCounts() const {
++        return Counts{
+             m_atomicAssertionCount.passed,
+             m_atomicAssertionCount.failed,
+             m_atomicAssertionCount.failedButOk,
+@@ -6710,6 +6838,13 @@ namespace Catch {
+         };
+     }
+ 
++    void RunContext::setAssertionCounts( Counts const& counts ) {
++        m_atomicAssertionCount.passed = counts.passed;
++        m_atomicAssertionCount.failed = counts.failed;
++        m_atomicAssertionCount.failedButOk = counts.failedButOk;
++        m_atomicAssertionCount.skipped = counts.skipped;
++    }
++
+     bool RunContext::aborting() const {
+         return m_atomicAssertionCount.failed >= m_abortAfterXFailedAssertions;
+     }
+@@ -9626,6 +9761,10 @@ private:
+ 
+             AssertionPrinter printer( m_stream, _assertionStats, printInfoMessages, m_colour.get() );
+             printer.print();
++            if ( !result.isOk() && m_attemptNumber > 1 ) {
++                m_stream << " (attempt " << m_attemptNumber << " of "
++                         << m_maxAttempts << ')';
++            }
+ 
+             m_stream << '\n' << std::flush;
+         }
+@@ -9637,6 +9776,44 @@ private:
+             }
+         }
+ 
++        void CompactReporter::testCaseAttemptStarting(
++            TestCaseAttemptInfo const& attemptInfo ) {
++            m_attemptNumber = attemptInfo.attemptNumber;
++            m_maxAttempts = attemptInfo.maxAttempts;
++        }
++
++        void CompactReporter::testCaseAttemptEnded(
++            TestCaseAttemptStats const& attemptStats ) {
++            if ( !attemptStats.isFinal ) {
++                m_stream << "Attempt " << attemptStats.attemptNumber << " of "
++                         << attemptStats.maxAttempts
++                         << " failed; retrying test case '"
++                         << attemptStats.testInfo->name << "'\n"
++                         << std::flush;
++            }
++        }
++
++        void CompactReporter::testCaseEnded(
++            TestCaseStats const& testCaseStats ) {
++            if ( testCaseStats.attemptCount > 1 ) {
++                m_stream << "Test case '" << testCaseStats.testInfo->name
++                         << "' ";
++                if ( testCaseStats.isFlaky ) {
++                    m_stream << "passed on attempt "
++                             << testCaseStats.attemptCount << " of "
++                             << testCaseStats.maxAttempts << " (flaky)\n";
++                } else {
++                    m_stream << "failed after " << testCaseStats.attemptCount
++                             << " of " << testCaseStats.maxAttempts
++                             << " attempts\n";
++                }
++                m_stream << std::flush;
++            }
++            StreamingReporterBase::testCaseEnded( testCaseStats );
++            m_attemptNumber = 0;
++            m_maxAttempts = 0;
++        }
++
+         void CompactReporter::testRunEnded( TestRunStats const& _testRunStats ) {
+             printTestRunTotals( m_stream, *m_colour, _testRunStats.totals );
+             m_stream << "\n\n" << std::flush;
+@@ -10142,10 +10319,42 @@ void ConsoleReporter::benchmarkFailed( StringRef error ) {
+         << ColumnBreak() << RowBreak();
+ }
+ 
++void ConsoleReporter::testCaseAttemptStarting(
++    TestCaseAttemptInfo const& attemptInfo ) {
++    m_attemptNumber = attemptInfo.attemptNumber;
++    m_maxAttempts = attemptInfo.maxAttempts;
++}
++
++void ConsoleReporter::testCaseAttemptEnded(
++    TestCaseAttemptStats const& attemptStats ) {
++    if ( !attemptStats.isFinal ) {
++        m_tablePrinter->close();
++        m_stream << "Attempt " << attemptStats.attemptNumber << " of "
++                 << attemptStats.maxAttempts
++                 << " failed; retrying test case '"
++                 << attemptStats.testInfo->name << "'\n"
++                 << std::flush;
++        m_headerPrinted = false;
++    }
++}
++
+ void ConsoleReporter::testCaseEnded(TestCaseStats const& _testCaseStats) {
+     m_tablePrinter->close();
++    if ( _testCaseStats.attemptCount > 1 ) {
++        m_stream << "Test case '" << _testCaseStats.testInfo->name << "' ";
++        if ( _testCaseStats.isFlaky ) {
++            m_stream << "passed on attempt " << _testCaseStats.attemptCount
++                     << " of " << _testCaseStats.maxAttempts << " (flaky)\n";
++        } else {
++            m_stream << "failed after " << _testCaseStats.attemptCount
++                     << " of " << _testCaseStats.maxAttempts << " attempts\n";
++        }
++        m_stream << std::flush;
++    }
+     StreamingReporterBase::testCaseEnded(_testCaseStats);
+     m_headerPrinted = false;
++    m_attemptNumber = 0;
++    m_maxAttempts = 0;
+ }
+ void ConsoleReporter::testRunEnded(TestRunStats const& _testRunStats) {
+     printTotalsDivider(_testRunStats.totals);
+@@ -10191,7 +10400,13 @@ void ConsoleReporter::lazyPrintRunInfo() {
+ }
+ void ConsoleReporter::printTestCaseAndSectionHeader() {
+     assert(!m_sectionStack.empty());
+-    printOpenHeader(currentTestCaseInfo->name);
++    ReusableStringStream testCaseName;
++    testCaseName << currentTestCaseInfo->name;
++    if ( m_attemptNumber > 1 ) {
++        testCaseName << " (attempt " << m_attemptNumber << " of "
++                     << m_maxAttempts << ')';
++    }
++    printOpenHeader(testCaseName.str());
+ 
+     if (m_sectionStack.size() > 1) {
+         auto guard = m_colour->guardColour( Colour::Headers ).engage( m_stream );
+@@ -10417,16 +10632,31 @@ namespace Catch {
+         m_sectionStack.pop_back();
+     }
+ 
++    void CumulativeReporterBase::testCaseAttemptEnded(
++        TestCaseAttemptStats const& attemptStats ) {
++        if ( attemptStats.isFinal ) { return; }
++
++        auto node =
++            Detail::make_unique<TestCaseAttemptNode>( attemptStats );
++        assert( m_sectionStack.empty() );
++        assert( m_rootSection );
++        node->children.push_back( CATCH_MOVE( m_rootSection ) );
++        m_supersededAttempts.push_back( CATCH_MOVE( node ) );
++        m_deepestSection = nullptr;
++    }
++
+     void CumulativeReporterBase::testCaseEnded(
+         TestCaseStats const& testCaseStats ) {
+         auto node = Detail::make_unique<TestCaseNode>( testCaseStats );
+         assert( m_sectionStack.size() == 0 );
+         node->children.push_back( CATCH_MOVE(m_rootSection) );
++        node->supersededAttempts.swap( m_supersededAttempts );
+         m_testCases.push_back( CATCH_MOVE(node) );
+ 
+         assert( m_deepestSection );
+         m_deepestSection->stdOut = testCaseStats.stdOut;
+         m_deepestSection->stdErr = testCaseStats.stdErr;
++        m_deepestSection = nullptr;
+     }
+ 
+ 
+@@ -11008,6 +11238,9 @@ namespace Catch {
+ 
+     void JsonReporter::testCaseStarting( TestCaseInfo const& tcInfo ) {
+         StreamingReporterBase::testCaseStarting( tcInfo );
++        m_attemptNumber = 0;
++        m_maxAttempts = 1;
++        m_attemptResults.clear();
+ 
+         assert( isInside( Writer::Array ) &&
+                 "We should be in the 'test-cases' array" );
+@@ -11029,6 +11262,19 @@ namespace Catch {
+         startArray( "runs"_sr );
+     }
+ 
++    void JsonReporter::testCaseAttemptStarting(
++        TestCaseAttemptInfo const& attemptInfo ) {
++        m_attemptNumber = attemptInfo.attemptNumber;
++        m_maxAttempts = attemptInfo.maxAttempts;
++    }
++
++    void JsonReporter::testCaseAttemptEnded(
++        TestCaseAttemptStats const& attemptStats ) {
++        m_attemptResults.push_back( { attemptStats.attemptNumber,
++                                      attemptStats.isFinal,
++                                      attemptStats.totals.assertions } );
++    }
++
+     void JsonReporter::testCaseEnded( TestCaseStats const& tcStats ) {
+         StreamingReporterBase::testCaseEnded( tcStats );
+ 
+@@ -11044,6 +11290,23 @@ namespace Catch {
+             // We do not write the test case totals, because there will always be just one test case here.
+             // TODO: overall "result" -> success, skip, fail here? Or in partial result?
+         }
++        if ( tcStats.maxAttempts > 1 ) {
++            auto attempts =
++                m_objectWriters.top().write( "attempts"_sr ).writeObject();
++            attempts.write( "used"_sr ).write( tcStats.attemptCount );
++            attempts.write( "max"_sr ).write( tcStats.maxAttempts );
++            attempts.write( "flaky"_sr ).write( tcStats.isFlaky );
++            auto results = attempts.write( "results"_sr ).writeArray();
++            for ( auto const& attemptResult : m_attemptResults ) {
++                auto result = results.writeObject();
++                result.write( "attempt"_sr )
++                    .write( attemptResult.attemptNumber );
++                result.write( "final"_sr ).write( attemptResult.isFinal );
++                auto totals = result.write( "totals"_sr ).writeObject();
++                writeCounts( totals.write( "assertions"_sr ).writeObject(),
++                             attemptResult.assertions );
++            }
++        }
+         // We do not write out stderr/stdout, because we instead wrote those out in partial runs
+ 
+         // TODO: aborting?
+@@ -11057,6 +11320,11 @@ namespace Catch {
+                                                 uint64_t index ) {
+         startObject();
+         m_objectWriters.top().write( "run-idx"_sr ).write( index );
++        if ( m_maxAttempts > 1 ) {
++            m_objectWriters.top()
++                .write( "attempt"_sr )
++                .write( m_attemptNumber );
++        }
+         startArray( "path"_sr );
+         // TODO: we want to delay most of the printing to the 'root' section
+         // TODO: childSection key name?
+@@ -11272,6 +11540,73 @@ namespace Catch {
+             return rss.str();
+         }
+ 
++        bool shouldWriteJunitAssertion( AssertionResult const& result ) {
++            return !result.isOk() ||
++                   result.getResultType() == ResultWas::ExplicitSkip;
++        }
++
++        std::string formatAssertion( AssertionStats const& stats ) {
++            AssertionResult const& result = stats.assertionResult;
++            ReusableStringStream rss;
++            if ( result.getResultType() == ResultWas::ExplicitSkip ) {
++                rss << "SKIPPED\n";
++            } else {
++                rss << "FAILED:\n";
++                if ( result.hasExpression() ) {
++                    rss << "  " << result.getExpressionInMacro() << '\n';
++                }
++                if ( result.hasExpandedExpression() ) {
++                    rss << "with expansion:\n"
++                        << TextFlow::Column( result.getExpandedExpression() )
++                               .indent( 2 )
++                        << '\n';
++                }
++            }
++
++            if ( result.hasMessage() ) { rss << result.getMessage() << '\n'; }
++            for ( auto const& msg : stats.infoMessages ) {
++                if ( msg.type == ResultWas::Info ) {
++                    rss << msg.message << '\n';
++                }
++            }
++
++            rss << "at " << result.getSourceInfo();
++            return rss.str();
++        }
++
++        void appendJunitAssertionDiagnostics(
++            CumulativeReporterBase::SectionNode const& sectionNode,
++            ReusableStringStream& rss ) {
++            for ( auto const& assertionOrBenchmark :
++                  sectionNode.assertionsAndBenchmarks ) {
++                if ( assertionOrBenchmark.isAssertion() ) {
++                    auto const& assertion =
++                        assertionOrBenchmark.asAssertion();
++                    if ( shouldWriteJunitAssertion(
++                             assertion.assertionResult ) ) {
++                        rss << formatAssertion( assertion ) << '\n';
++                    }
++                }
++            }
++            for ( auto const& child : sectionNode.childSections ) {
++                appendJunitAssertionDiagnostics( *child, rss );
++            }
++        }
++
++        std::string makeSupersededAttemptOutput(
++            CumulativeReporterBase::TestCaseNode const& testCaseNode ) {
++            ReusableStringStream rss;
++            for ( auto const& attempt :
++                  testCaseNode.supersededAttempts ) {
++                rss << "Attempt " << attempt->value.attemptNumber << " of "
++                    << attempt->value.maxAttempts << " failed:\n";
++                assert( attempt->children.size() == 1 );
++                appendJunitAssertionDiagnostics( *attempt->children.front(),
++                                                 rss );
++            }
++            return rss.str();
++        }
++
+         static void normalizeNamespaceMarkers(std::string& str) {
+             std::size_t pos = str.find( "::" );
+             while ( pos != std::string::npos ) {
+@@ -11304,18 +11639,41 @@ namespace Catch {
+         stdOutForSuite.clear();
+         stdErrForSuite.clear();
+         unexpectedExceptions = 0;
++        m_unexpectedExceptionsInAttempt = 0;
+     }
+ 
+     void JunitReporter::testCaseStarting( TestCaseInfo const& testCaseInfo ) {
+         m_okToFail = testCaseInfo.okToFail();
+     }
+ 
++    void JunitReporter::testCaseAttemptStarting(
++        TestCaseAttemptInfo const& attemptInfo ) {
++        CumulativeReporterBase::testCaseAttemptStarting( attemptInfo );
++        m_unexpectedExceptionsInAttempt = 0;
++    }
++
+     void JunitReporter::assertionEnded( AssertionStats const& assertionStats ) {
+-        if( assertionStats.assertionResult.getResultType() == ResultWas::ThrewException && !m_okToFail )
+-            unexpectedExceptions++;
++        if ( assertionStats.assertionResult.getResultType() ==
++                 ResultWas::ThrewException &&
++             !m_okToFail ) {
++            if ( m_config->retryFailed() > 0 ) {
++                ++m_unexpectedExceptionsInAttempt;
++            } else {
++                ++unexpectedExceptions;
++            }
++        }
+         CumulativeReporterBase::assertionEnded( assertionStats );
+     }
+ 
++    void JunitReporter::testCaseAttemptEnded(
++        TestCaseAttemptStats const& attemptStats ) {
++        if ( attemptStats.isFinal ) {
++            unexpectedExceptions += m_unexpectedExceptionsInAttempt;
++        }
++        m_unexpectedExceptionsInAttempt = 0;
++        CumulativeReporterBase::testCaseAttemptEnded( attemptStats );
++    }
++
+     void JunitReporter::testCaseEnded( TestCaseStats const& testCaseStats ) {
+         stdOutForSuite += testCaseStats.stdOut;
+         stdErrForSuite += testCaseStats.stdErr;
+@@ -11388,20 +11746,28 @@ namespace Catch {
+ 
+         normalizeNamespaceMarkers(className);
+ 
+-        writeSection( className, "", rootSection, stats.testInfo->okToFail() );
++        auto pendingSystemOut = makeSupersededAttemptOutput( testCaseNode );
++        writeSection( className,
++                      "",
++                      rootSection,
++                      stats.testInfo->okToFail(),
++                      pendingSystemOut );
++        assert( pendingSystemOut.empty() );
+     }
+ 
+     void JunitReporter::writeSection( std::string const& className,
+                                       std::string const& rootName,
+                                       SectionNode const& sectionNode,
+-                                      bool testOkToFail) {
++                                      bool testOkToFail,
++                                      std::string& pendingSystemOut ) {
+         std::string name = trim( sectionNode.stats.sectionInfo.name );
+         if( !rootName.empty() )
+             name = rootName + '/' + name;
+ 
+         if ( sectionNode.stats.assertions.total() > 0
+            || !sectionNode.stdOut.empty()
+-           || !sectionNode.stdErr.empty() ) {
++           || !sectionNode.stdErr.empty()
++           || !pendingSystemOut.empty() ) {
+             XmlWriter::ScopedElement e = xml.scopedElement( "testcase" );
+             if( className.empty() ) {
+                 xml.writeAttribute( "classname"_sr, name );
+@@ -11426,16 +11792,29 @@ namespace Catch {
+             writeAssertions( sectionNode );
+ 
+ 
+-            if( !sectionNode.stdOut.empty() )
+-                xml.scopedElement( "system-out" ).writeText( trim( sectionNode.stdOut ), XmlFormatting::Newline );
++            if ( !pendingSystemOut.empty() || !sectionNode.stdOut.empty() ) {
++                pendingSystemOut += sectionNode.stdOut;
++                xml.scopedElement( "system-out" )
++                    .writeText( trim( pendingSystemOut ),
++                                XmlFormatting::Newline );
++                pendingSystemOut.clear();
++            }
+             if( !sectionNode.stdErr.empty() )
+                 xml.scopedElement( "system-err" ).writeText( trim( sectionNode.stdErr ), XmlFormatting::Newline );
+         }
+         for( auto const& childNode : sectionNode.childSections )
+             if( className.empty() )
+-                writeSection( name, "", *childNode, testOkToFail );
++                writeSection( name,
++                              "",
++                              *childNode,
++                              testOkToFail,
++                              pendingSystemOut );
+             else
+-                writeSection( className, name, *childNode, testOkToFail );
++                writeSection( className,
++                              name,
++                              *childNode,
++                              testOkToFail,
++                              pendingSystemOut );
+     }
+ 
+     void JunitReporter::writeAssertions( SectionNode const& sectionNode ) {
+@@ -11452,10 +11831,7 @@ namespace Catch {
+ 
+     bool JunitReporter::writeAssertion( AssertionStats const& stats ) {
+         AssertionResult const& result = stats.assertionResult;
+-        if ( result.isOk() &&
+-             result.getResultType() != ResultWas::ExplicitSkip ) {
+-            return false;
+-        }
++        if ( !shouldWriteJunitAssertion( result ) ) { return false; }
+         std::string elementName;
+         switch ( result.getResultType() ) {
+         case ResultWas::ThrewException:
+@@ -11486,31 +11862,7 @@ namespace Catch {
+         xml.writeAttribute( "message"_sr, result.getExpression() );
+         xml.writeAttribute( "type"_sr, result.getTestMacroName() );
+ 
+-        ReusableStringStream rss;
+-        if ( result.getResultType() == ResultWas::ExplicitSkip ) {
+-            rss << "SKIPPED\n";
+-        } else {
+-            rss << "FAILED:\n";
+-            if ( result.hasExpression() ) {
+-                rss << "  ";
+-                rss << result.getExpressionInMacro();
+-                rss << '\n';
+-            }
+-            if ( result.hasExpandedExpression() ) {
+-                rss << "with expansion:\n";
+-                rss << TextFlow::Column( result.getExpandedExpression() )
+-                           .indent( 2 )
+-                    << '\n';
+-            }
+-        }
+-
+-        if ( result.hasMessage() ) { rss << result.getMessage() << '\n'; }
+-        for ( auto const& msg : stats.infoMessages ) {
+-            if ( msg.type == ResultWas::Info ) { rss << msg.message << '\n'; }
+-        }
+-
+-        rss << "at " << result.getSourceInfo();
+-        xml.writeText( rss.str(), XmlFormatting::Newline );
++        xml.writeText( formatAssertion( stats ), XmlFormatting::Newline );
+         return true;
+     }
+ 
+@@ -11604,6 +11956,13 @@ namespace Catch {
+         }
+     }
+ 
++    void MultiReporter::testCaseAttemptStarting(
++        TestCaseAttemptInfo const& attemptInfo ) {
++        for ( auto& reporterish : m_reporterLikes ) {
++            reporterish->testCaseAttemptStarting( attemptInfo );
++        }
++    }
++
+     void
+     MultiReporter::testCasePartialStarting( TestCaseInfo const& testInfo,
+                                                 uint64_t partNumber ) {
+@@ -11660,6 +12019,13 @@ namespace Catch {
+         }
+     }
+ 
++    void MultiReporter::testCaseAttemptEnded(
++        TestCaseAttemptStats const& attemptStats ) {
++        for ( auto& reporterish : m_reporterLikes ) {
++            reporterish->testCaseAttemptEnded( attemptStats );
++        }
++    }
++
+     void MultiReporter::testCaseEnded( TestCaseStats const& testCaseStats ) {
+         for ( auto& reporterish : m_reporterLikes ) {
+             reporterish->testCaseEnded( testCaseStats );
+@@ -11752,6 +12118,88 @@ namespace Catch {
+             sstr << "rng-seed=" << config.rngSeed();
+             return sstr.str();
+         }
++
++        bool shouldWriteSonarQubeAssertion( AssertionResult const& result ) {
++            return !result.isOk() ||
++                   result.getResultType() == ResultWas::ExplicitSkip;
++        }
++
++        std::string makeAssertionMessage( AssertionStats const& stats ) {
++            ReusableStringStream rss;
++            rss << stats.assertionResult.getTestMacroName() << '('
++                << stats.assertionResult.getExpression() << ')';
++            return rss.str();
++        }
++
++        std::string makeAssertionText( AssertionStats const& stats ) {
++            AssertionResult const& result = stats.assertionResult;
++            ReusableStringStream rss;
++            if ( result.getResultType() == ResultWas::ExplicitSkip ) {
++                rss << "SKIPPED\n";
++            } else {
++                rss << "FAILED:\n";
++                if ( result.hasExpression() ) {
++                    rss << '\t' << result.getExpressionInMacro() << '\n';
++                }
++                if ( result.hasExpandedExpression() ) {
++                    rss << "with expansion:\n\t"
++                        << result.getExpandedExpression() << '\n';
++                }
++            }
++
++            if ( result.hasMessage() ) { rss << result.getMessage() << '\n'; }
++            for ( auto const& msg : stats.infoMessages ) {
++                if ( msg.type == ResultWas::Info ) {
++                    rss << msg.message << '\n';
++                }
++            }
++            rss << "at " << result.getSourceInfo();
++            return rss.str();
++        }
++
++        void appendSonarQubeAssertionDiagnostics(
++            CumulativeReporterBase::SectionNode const& sectionNode,
++            ReusableStringStream& rss ) {
++            for ( auto const& assertionOrBenchmark :
++                  sectionNode.assertionsAndBenchmarks ) {
++                if ( assertionOrBenchmark.isAssertion() ) {
++                    auto const& assertion =
++                        assertionOrBenchmark.asAssertion();
++                    if ( shouldWriteSonarQubeAssertion(
++                             assertion.assertionResult ) ) {
++                        rss << makeAssertionMessage( assertion ) << '\n'
++                            << makeAssertionText( assertion ) << '\n';
++                    }
++                }
++            }
++            for ( auto const& child : sectionNode.childSections ) {
++                appendSonarQubeAssertionDiagnostics( *child, rss );
++            }
++        }
++
++        std::string sanitizeXmlComment( std::string const& text ) {
++            std::string sanitized;
++            sanitized.reserve( text.size() );
++            for ( char c : text ) {
++                if ( c == '-' && !sanitized.empty() &&
++                     sanitized.back() == '-' ) {
++                    sanitized += ' ';
++                }
++                sanitized += c;
++            }
++            return sanitized;
++        }
++
++        std::string makeSupersededAttemptComment(
++            CumulativeReporterBase::TestCaseAttemptNode const& attempt ) {
++            ReusableStringStream rss;
++            rss << "Attempt " << attempt.value.attemptNumber << " of "
++                << attempt.value.maxAttempts << " failed:\n";
++            assert( attempt.children.size() == 1 );
++            appendSonarQubeAssertionDiagnostics( *attempt.children.front(),
++                                                 rss );
++            return sanitizeXmlComment( rss.str() );
++        }
+     }
+ 
+     void SonarQubeReporter::testRunStarting(TestRunInfo const& testRunInfo) {
+@@ -11784,6 +12232,10 @@ namespace Catch {
+     }
+ 
+     void SonarQubeReporter::writeTestCase(TestCaseNode const& testCaseNode) {
++        for ( auto const& attempt : testCaseNode.supersededAttempts ) {
++            xml.writeComment( makeSupersededAttemptComment( *attempt ) );
++        }
++
+         // All test cases have exactly one section - which represents the
+         // test case itself. That section may have 0-n nested sections
+         assert(testCaseNode.children.size() == 1);
+@@ -11820,8 +12272,7 @@ namespace Catch {
+ 
+     void SonarQubeReporter::writeAssertion(AssertionStats const& stats, bool okToFail) {
+         AssertionResult const& result = stats.assertionResult;
+-        if ( !result.isOk() ||
+-             result.getResultType() == ResultWas::ExplicitSkip ) {
++        if ( shouldWriteSonarQubeAssertion( result ) ) {
+             std::string elementName;
+             if (okToFail) {
+                 elementName = "skipped";
+@@ -11853,32 +12304,10 @@ namespace Catch {
+ 
+             XmlWriter::ScopedElement e = xml.scopedElement(elementName);
+ 
+-            ReusableStringStream messageRss;
+-            messageRss << result.getTestMacroName() << '(' << result.getExpression() << ')';
+-            xml.writeAttribute("message"_sr, messageRss.str());
+-
+-            ReusableStringStream textRss;
+-            if ( result.getResultType() == ResultWas::ExplicitSkip ) {
+-                textRss << "SKIPPED\n";
+-            } else {
+-                textRss << "FAILED:\n";
+-                if (result.hasExpression()) {
+-                    textRss << '\t' << result.getExpressionInMacro() << '\n';
+-                }
+-                if (result.hasExpandedExpression()) {
+-                    textRss << "with expansion:\n\t" << result.getExpandedExpression() << '\n';
+-                }
+-            }
+-
+-            if (result.hasMessage())
+-                textRss << result.getMessage() << '\n';
+-
+-            for (auto const& msg : stats.infoMessages)
+-                if (msg.type == ResultWas::Info)
+-                    textRss << msg.message << '\n';
+-
+-            textRss << "at " << result.getSourceInfo();
+-            xml.writeText(textRss.str(), XmlFormatting::Newline);
++            xml.writeAttribute( "message"_sr,
++                                makeAssertionMessage( stats ) );
++            xml.writeText( makeAssertionText( stats ),
++                           XmlFormatting::Newline );
+         }
+     }
+ 
+@@ -11915,6 +12344,15 @@ namespace Catch {
+         static constexpr StringRef tapPassedString = "ok"_sr;
+         static constexpr Colour::Code tapDimColour = Colour::FileName;
+ 
++        class TapStringStream final : public IStream {
++        public:
++            std::ostream& stream() override { return m_stream.get(); }
++            std::string str() const { return m_stream.str(); }
++
++        private:
++            ReusableStringStream m_stream;
++        };
++
+         class TapAssertionPrinter {
+         public:
+             TapAssertionPrinter& operator= (TapAssertionPrinter const&) = delete;
+@@ -12080,6 +12518,18 @@ namespace Catch {
+             ColourImpl* colourImpl;
+         };
+ 
++        void writeTapDiagnostic( std::ostream& stream,
++                                 std::string const& diagnostic ) {
++            stream << "# ";
++            for ( std::size_t i = 0; i < diagnostic.size(); ++i ) {
++                stream << diagnostic[i];
++                if ( diagnostic[i] == '\n' && i + 1 < diagnostic.size() ) {
++                    stream << "# ";
++                }
++            }
++            stream << '\n';
++        }
++
+     } // End anonymous namespace
+ 
+     void TAPReporter::testRunStarting( TestRunInfo const& ) {
+@@ -12095,15 +12545,66 @@ namespace Catch {
+     }
+ 
+     void TAPReporter::assertionEnded(AssertionStats const& _assertionStats) {
++        if ( m_config->retryFailed() > 0 ) {
++            static_cast<void>(
++                _assertionStats.assertionResult.getExpandedExpression() );
++            m_bufferedAssertions.emplace_back(
++                _assertionStats,
++                static_cast<std::string>( currentTestCaseInfo->name ) );
++            return;
++        }
++
++        BufferedAssertion assertion(
++            _assertionStats,
++            static_cast<std::string>( currentTestCaseInfo->name ) );
++        printAssertion( assertion, m_colour.get() );
++    }
++
++    void TAPReporter::printAssertion( BufferedAssertion const& assertion,
++                                      ColourImpl* colour ) {
+         ++counter;
+ 
+-        m_stream << "# " << currentTestCaseInfo->name << '\n';
+-        TapAssertionPrinter printer(m_stream, _assertionStats, counter, m_colour.get());
++        m_stream << "# " << assertion.testName << '\n';
++        TapAssertionPrinter printer(
++            m_stream, assertion.stats, counter, colour );
+         printer.print();
+ 
+         m_stream << '\n' << std::flush;
+     }
+ 
++    void TAPReporter::testCaseAttemptStarting( TestCaseAttemptInfo const& ) {
++        m_bufferedAssertions.clear();
++    }
++
++    void TAPReporter::testCaseAttemptEnded(
++        TestCaseAttemptStats const& attemptStats ) {
++        if ( attemptStats.isFinal ) {
++            for ( auto const& assertion : m_bufferedAssertions ) {
++                printAssertion( assertion, m_colour.get() );
++            }
++        } else {
++            auto diagnosticCounter = counter;
++            for ( auto const& assertion : m_bufferedAssertions ) {
++                TapStringStream diagnostic;
++                auto noColour =
++                    makeColourImpl( ColourMode::None, &diagnostic );
++                diagnostic.stream() << assertion.testName << '\n';
++                TapAssertionPrinter printer( diagnostic.stream(),
++                                             assertion.stats,
++                                             ++diagnosticCounter,
++                                             noColour.get() );
++                printer.print();
++
++                m_stream << "# Attempt " << attemptStats.attemptNumber
++                         << " of " << attemptStats.maxAttempts
++                         << " failed:\n";
++                writeTapDiagnostic( m_stream, diagnostic.str() );
++            }
++        }
++        m_bufferedAssertions.clear();
++        m_stream.flush();
++    }
++
+     void TAPReporter::testRunEnded(TestRunStats const& _testRunStats) {
+         m_stream << "1.." << _testRunStats.totals.assertions.total();
+         if (_testRunStats.totals.testCases.total() == 0) {
+@@ -12223,16 +12724,25 @@ namespace Catch {
+                     "  " << result.getExpandedExpression() << '\n';
+             }
+ 
++            ReusableStringStream serviceMessage;
+             if ( result.getResultType() == ResultWas::ExplicitSkip ) {
+-                m_stream << "##teamcity[testIgnored";
++                serviceMessage << "##teamcity[testIgnored";
+             } else if ( currentTestCaseInfo->okToFail() ) {
+                 msg << "- failure ignore as test marked as 'ok to fail'\n";
+-                m_stream << "##teamcity[testIgnored";
++                serviceMessage << "##teamcity[testIgnored";
+             } else {
+-                m_stream << "##teamcity[testFailed";
++                serviceMessage << "##teamcity[testFailed";
++            }
++            serviceMessage
++                << " name='" << escape( currentTestCaseInfo->name ) << '\''
++                << " message='" << escape( msg.str() ) << '\'' << "]\n";
++
++            if ( m_config->retryFailed() > 0 ) {
++                m_bufferedAssertions.push_back(
++                    { serviceMessage.str(), msg.str() } );
++            } else {
++                m_stream << serviceMessage.str();
+             }
+-            m_stream << " name='" << escape( currentTestCaseInfo->name ) << '\''
+-                     << " message='" << escape( msg.str() ) << '\'' << "]\n";
+         }
+         m_stream.flush();
+     }
+@@ -12245,6 +12755,32 @@ namespace Catch {
+         m_stream.flush();
+     }
+ 
++    void TeamCityReporter::testCaseAttemptStarting(
++        TestCaseAttemptInfo const& ) {
++        m_bufferedAssertions.clear();
++    }
++
++    void TeamCityReporter::testCaseAttemptEnded(
++        TestCaseAttemptStats const& attemptStats ) {
++        if ( attemptStats.isFinal ) {
++            for ( auto const& assertion : m_bufferedAssertions ) {
++                m_stream << assertion.serviceMessage;
++            }
++        } else {
++            for ( auto const& assertion : m_bufferedAssertions ) {
++                ReusableStringStream diagnostic;
++                diagnostic << "Attempt " << attemptStats.attemptNumber
++                           << " of " << attemptStats.maxAttempts
++                           << " failed:\n" << assertion.diagnostic;
++                m_stream << "##teamcity[testStdErr name='"
++                         << escape( currentTestCaseInfo->name ) << "' out='"
++                         << escape( diagnostic.str() ) << "']\n";
++            }
++        }
++        m_bufferedAssertions.clear();
++        m_stream.flush();
++    }
++
+     void TeamCityReporter::testCaseEnded(TestCaseStats const& testCaseStats) {
+         StreamingReporterBase::testCaseEnded(testCaseStats);
+         auto const& testCaseInfo = *testCaseStats.testInfo;
+@@ -12348,6 +12884,14 @@ namespace Catch {
+         m_xml.ensureTagClosed();
+     }
+ 
++    void XmlReporter::testCaseAttemptStarting(
++        TestCaseAttemptInfo const& attemptInfo ) {
++        m_xml.startElement( "Attempt" )
++            .writeAttribute( "number"_sr, attemptInfo.attemptNumber )
++            .writeAttribute( "maxAttempts"_sr, attemptInfo.maxAttempts );
++        m_xml.ensureTagClosed();
++    }
++
+     void XmlReporter::sectionStarting( SectionInfo const& sectionInfo ) {
+         StreamingReporterBase::sectionStarting( sectionInfo );
+         if( m_sectionDepth++ > 0 ) {
+@@ -12458,11 +13002,27 @@ namespace Catch {
+         }
+     }
+ 
++    void XmlReporter::testCaseAttemptEnded(
++        TestCaseAttemptStats const& attemptStats ) {
++        m_xml.scopedElement( "AttemptResult" )
++            .writeAttribute( "success"_sr,
++                             attemptStats.totals.assertions.allOk() )
++            .writeAttribute( "skips"_sr,
++                             attemptStats.totals.assertions.skipped )
++            .writeAttribute( "final"_sr, attemptStats.isFinal );
++        m_xml.endElement();
++    }
++
+     void XmlReporter::testCaseEnded( TestCaseStats const& testCaseStats ) {
+         StreamingReporterBase::testCaseEnded( testCaseStats );
+         XmlWriter::ScopedElement e = m_xml.scopedElement( "OverallResult" );
+         e.writeAttribute( "success"_sr, testCaseStats.totals.assertions.allOk() );
+         e.writeAttribute( "skips"_sr, testCaseStats.totals.assertions.skipped );
++        if ( testCaseStats.maxAttempts > 1 ) {
++            e.writeAttribute( "attempts"_sr, testCaseStats.attemptCount );
++            e.writeAttribute( "maxAttempts"_sr, testCaseStats.maxAttempts );
++            e.writeAttribute( "flaky"_sr, testCaseStats.isFlaky );
++        }
+ 
+         if ( m_config->showDurations() == ShowDurations::Always )
+             e.writeAttribute( "durationInSeconds"_sr, m_testCaseTimer.getElapsedSeconds() );
+diff --git a/extras/catch_amalgamated.hpp b/extras/catch_amalgamated.hpp
+index 7a21dd51..db98705c 100644
+--- a/extras/catch_amalgamated.hpp
++++ b/extras/catch_amalgamated.hpp
+@@ -7,7 +7,7 @@
+ // SPDX-License-Identifier: BSL-1.0
+ 
+ //  Catch v3.16.0
+-//  Generated: 2026-08-25 09:29:22.652020
++//  Generated: 2026-10-04 20:38:30.470148
+ //  ----------------------------------------------------------
+ //  This file is an amalgamation of multiple different files.
+ //  You probably shouldn't edit it directly.
+@@ -1242,6 +1242,11 @@ namespace Catch {
+         virtual bool warnAboutInfiniteGenerators() const = 0;
+         virtual bool zeroTestsCountAsSuccess() const = 0;
+         virtual int abortAfter() const = 0;
++        //! Number of retries after the first attempt of a failed test case
++        //!
++        //! Not pure virtual, so that existing implementations keep
++        //! compiling; the default means "no retries".
++        virtual unsigned int retryFailed() const;
+         virtual bool showInvisibles() const = 0;
+         virtual ShowDurations showDurations() const = 0;
+         virtual double minDuration() const = 0;
+@@ -3936,6 +3941,8 @@ namespace Catch {
+         unsigned int shardCount = 1;
+         unsigned int shardIndex = 0;
+ 
++        unsigned int retryFailed = 0;
++
+         bool skipBenchmarks = false;
+         bool benchmarkNoAnalysis = false;
+         unsigned int benchmarkSamples = 100;
+@@ -4009,6 +4016,7 @@ namespace Catch {
+         ColourMode defaultColourMode() const override;
+         bool shouldDebugBreak() const override;
+         int abortAfter() const override;
++        unsigned int retryFailed() const override;
+         bool showInvisibles() const override;
+         Verbosity verbosity() const override;
+         bool skipBenchmarks() const override;
+@@ -9280,6 +9288,7 @@ auto from_range(Container const& cnt) {
+ #define CATCH_INTERFACES_REPORTER_HPP_INCLUDED
+ 
+ 
++#include <cstdint>
+ #include <map>
+ #include <string>
+ #include <vector>
+@@ -9359,6 +9368,51 @@ namespace Catch {
+         std::string stdOut;
+         std::string stdErr;
+         bool aborting;
++        //! Number of attempts used by the test case, see `--retry-failed`
++        std::uint64_t attemptCount = 1;
++        //! Maximum number of attempts, `--retry-failed` + 1
++        std::uint64_t maxAttempts = 1;
++        //! The test case passed after at least one failed attempt
++        bool isFlaky = false;
++    };
++
++    //! Identifies one attempt of a test case run with `--retry-failed`
++    struct TestCaseAttemptInfo {
++        TestCaseAttemptInfo( TestCaseInfo const& _testInfo,
++                             std::uint64_t _attemptNumber,
++                             std::uint64_t _maxAttempts );
++
++        TestCaseInfo const* testInfo;
++        //! One-based number of this attempt
++        std::uint64_t attemptNumber;
++        //! Maximum number of attempts, `--retry-failed` + 1
++        std::uint64_t maxAttempts;
++    };
++
++    //! Result of one attempt of a test case run with `--retry-failed`
++    struct TestCaseAttemptStats {
++        TestCaseAttemptStats( TestCaseInfo const& _testInfo,
++                              std::uint64_t _attemptNumber,
++                              std::uint64_t _maxAttempts,
++                              Totals const& _totals,
++                              std::string&& _stdOut,
++                              std::string&& _stdErr,
++                              bool _aborting,
++                              bool _isFinal );
++
++        TestCaseInfo const* testInfo;
++        //! One-based number of this attempt
++        std::uint64_t attemptNumber;
++        //! Maximum number of attempts, `--retry-failed` + 1
++        std::uint64_t maxAttempts;
++        //! Totals of this attempt only
++        Totals totals;
++        //! Output captured during this attempt only
++        std::string stdOut;
++        std::string stdErr;
++        bool aborting;
++        //! False if the test case is retried after this attempt
++        bool isFinal;
+     };
+ 
+     struct TestRunStats {
+@@ -9433,6 +9487,14 @@ namespace Catch {
+ 
+         //! Called _once_ for each TEST_CASE, no matter how many times it is entered
+         virtual void testCaseStarting( TestCaseInfo const& testInfo ) = 0;
++        /**
++         * Called before every attempt of a TEST_CASE when `--retry-failed`
++         * is greater than 0, including the first attempt
++         *
++         * Not pure virtual, so that existing reporters and listeners keep
++         * compiling; the default does nothing.
++         */
++        virtual void testCaseAttemptStarting( TestCaseAttemptInfo const& attemptInfo );
+         //! Called _every time_ a TEST_CASE is entered, including repeats (due to sections)
+         virtual void testCasePartialStarting( TestCaseInfo const& testInfo, uint64_t partNumber ) = 0;
+         //! Called when a `SECTION` is being entered. Not called for skipped sections
+@@ -9457,6 +9519,14 @@ namespace Catch {
+         virtual void sectionEnded( SectionStats const& sectionStats ) = 0;
+         //! Called _every time_ a TEST_CASE is entered, including repeats (due to sections)
+         virtual void testCasePartialEnded(TestCaseStats const& testCaseStats, uint64_t partNumber ) = 0;
++        /**
++         * Called after every attempt of a TEST_CASE when `--retry-failed`
++         * is greater than 0, including the final attempt
++         *
++         * Not pure virtual, so that existing reporters and listeners keep
++         * compiling; the default does nothing.
++         */
++        virtual void testCaseAttemptEnded( TestCaseAttemptStats const& attemptStats );
+         //! Called _once_ for each TEST_CASE, no matter how many times it is entered
+         virtual void testCaseEnded( TestCaseStats const& testCaseStats ) = 0;
+         /**
+@@ -11045,6 +11115,7 @@ namespace Catch {
+ 
+ #endif // CATCH_THREAD_SUPPORT_HPP_INCLUDED
+ 
++#include <cstdint>
+ #include <string>
+ 
+ namespace Catch {
+@@ -11130,10 +11201,22 @@ namespace Catch {
+         bool aborting() const;
+ 
+     private:
++        struct TestCaseAttemptResult {
++            Totals totals;
++            std::string stdOut;
++            std::string stdErr;
++        };
++
+         void assertionPassedFastPath( SourceLineInfo lineInfo );
+         // Update the non-thread-safe m_totals from the atomic assertion counts.
+         void updateTotalsFromAtomics();
++        Counts getAssertionCounts() const;
++        void setAssertionCounts( Counts const& counts );
+ 
++        TestCaseAttemptResult
++        runTestAttempt( TestCaseHandle const& testCase,
++                        Totals const& totalsAtAttemptStart,
++                        std::uint64_t& testRuns );
+         void runCurrentTest();
+         void invokeActiveTestCase();
+ 
+@@ -11159,6 +11242,8 @@ namespace Catch {
+         mutable Detail::Mutex m_assertionMutex;
+         TestRunInfo m_runInfo;
+         TestCaseHandle const* m_activeTestCase = nullptr;
++        std::uint64_t m_activeTestCaseAttempt = 0;
++        std::uint64_t m_maxTestCaseAttempts = 0;
+         ITracker* m_testCaseTracker = nullptr;
+         Optional<AssertionResult> m_lastResult;
+         IConfig const* m_config;
+@@ -13915,8 +14000,17 @@ namespace Catch {
+ 
+         void sectionEnded(SectionStats const& _sectionStats) override;
+ 
++        void testCaseAttemptStarting(
++            TestCaseAttemptInfo const& attemptInfo ) override;
++        void testCaseAttemptEnded(
++            TestCaseAttemptStats const& attemptStats ) override;
++        void testCaseEnded( TestCaseStats const& testCaseStats ) override;
++
+         void testRunEnded(TestRunStats const& _testRunStats) override;
+ 
++    private:
++        std::uint64_t m_attemptNumber = 0;
++        std::uint64_t m_maxAttempts = 0;
+     };
+ 
+ } // end namespace Catch
+@@ -13953,6 +14047,10 @@ namespace Catch {
+         void benchmarkEnded(BenchmarkStats<> const& stats) override;
+         void benchmarkFailed( StringRef error ) override;
+ 
++        void testCaseAttemptStarting(
++            TestCaseAttemptInfo const& attemptInfo ) override;
++        void testCaseAttemptEnded(
++            TestCaseAttemptStats const& attemptStats ) override;
+         void testCaseEnded(TestCaseStats const& _testCaseStats) override;
+         void testRunEnded(TestRunStats const& _testRunStats) override;
+         void testRunStarting(TestRunInfo const& _testRunInfo) override;
+@@ -13975,6 +14073,8 @@ namespace Catch {
+ 
+         bool m_headerPrinted = false;
+         bool m_testRunInfoPrinted = false;
++        std::uint64_t m_attemptNumber = 0;
++        std::uint64_t m_maxAttempts = 0;
+     };
+ 
+ } // end namespace Catch
+@@ -14058,8 +14158,14 @@ namespace Catch {
+             std::string stdErr;
+         };
+ 
++        using TestCaseAttemptNode = Node<TestCaseAttemptStats, SectionNode>;
++        struct TestCaseNode : Node<TestCaseStats, SectionNode> {
++            explicit TestCaseNode( TestCaseStats const& stats ):
++                Node<TestCaseStats, SectionNode>( stats ) {}
+ 
+-        using TestCaseNode = Node<TestCaseStats, SectionNode>;
++            std::vector<Detail::unique_ptr<TestCaseAttemptNode>>
++                supersededAttempts;
++        };
+         using TestRunNode = Node<TestRunStats, TestCaseNode>;
+ 
+         // GCC5 compat: we cannot use inherited constructor, because it
+@@ -14081,6 +14187,7 @@ namespace Catch {
+         void testRunStarting( TestRunInfo const& ) override {}
+ 
+         void testCaseStarting( TestCaseInfo const& ) override {}
++        void testCaseAttemptStarting( TestCaseAttemptInfo const& ) override {}
+         void testCasePartialStarting( TestCaseInfo const&, uint64_t ) override {}
+         void sectionStarting( SectionInfo const& sectionInfo ) override;
+ 
+@@ -14089,6 +14196,8 @@ namespace Catch {
+         void assertionEnded( AssertionStats const& assertionStats ) override;
+         void sectionEnded( SectionStats const& sectionStats ) override;
+         void testCasePartialEnded( TestCaseStats const&, uint64_t ) override {}
++        void testCaseAttemptEnded(
++            TestCaseAttemptStats const& attemptStats ) override;
+         void testCaseEnded( TestCaseStats const& testCaseStats ) override;
+         void testRunEnded( TestRunStats const& testRunStats ) override;
+         //! Customization point: called after last test finishes (testRunEnded has been handled)
+@@ -14115,6 +14224,9 @@ namespace Catch {
+         Detail::unique_ptr<SectionNode> m_rootSection;
+         // Deepest section of the _current_ test case
+         SectionNode* m_deepestSection = nullptr;
++        // Completed attempts that will be superseded by another attempt
++        std::vector<Detail::unique_ptr<TestCaseAttemptNode>>
++            m_supersededAttempts;
+         // Stack of _active_ sections in the _current_ test case
+         std::vector<SectionNode*> m_sectionStack;
+     };
+@@ -14275,6 +14387,7 @@ namespace Catch {
+ 
+ 
+ #include <stack>
++#include <vector>
+ 
+ namespace Catch {
+     class JsonReporter : public StreamingReporterBase {
+@@ -14290,6 +14403,10 @@ namespace Catch {
+         void testRunEnded( TestRunStats const& runStats ) override;
+ 
+         void testCaseStarting( TestCaseInfo const& tcInfo ) override;
++        void testCaseAttemptStarting(
++            TestCaseAttemptInfo const& attemptInfo ) override;
++        void testCaseAttemptEnded(
++            TestCaseAttemptStats const& attemptStats ) override;
+         void testCaseEnded( TestCaseStats const& tcStats ) override;
+ 
+         void testCasePartialStarting( TestCaseInfo const& tcInfo,
+@@ -14346,6 +14463,15 @@ namespace Catch {
+         std::stack<Writer> m_writers{};
+ 
+         bool m_startedListing = false;
++
++        struct AttemptResult {
++            std::uint64_t attemptNumber;
++            bool isFinal;
++            Counts assertions;
++        };
++        std::uint64_t m_attemptNumber = 0;
++        std::uint64_t m_maxAttempts = 1;
++        std::vector<AttemptResult> m_attemptResults;
+     };
+ } // namespace Catch
+ 
+@@ -14368,7 +14494,11 @@ namespace Catch {
+         void testRunStarting(TestRunInfo const& runInfo) override;
+ 
+         void testCaseStarting(TestCaseInfo const& testCaseInfo) override;
++        void testCaseAttemptStarting(
++            TestCaseAttemptInfo const& attemptInfo ) override;
+         void assertionEnded(AssertionStats const& assertionStats) override;
++        void testCaseAttemptEnded(
++            TestCaseAttemptStats const& attemptStats ) override;
+ 
+         void testCaseEnded(TestCaseStats const& testCaseStats) override;
+ 
+@@ -14382,7 +14512,8 @@ namespace Catch {
+         void writeSection( std::string const& className,
+                            std::string const& rootName,
+                            SectionNode const& sectionNode,
+-                           bool testOkToFail );
++                           bool testOkToFail,
++                           std::string& pendingSystemOut );
+ 
+         void writeAssertions(SectionNode const& sectionNode);
+         bool writeAssertion(AssertionStats const& stats);
+@@ -14392,6 +14523,7 @@ namespace Catch {
+         std::string stdOutForSuite;
+         std::string stdErrForSuite;
+         unsigned int unexpectedExceptions = 0;
++        unsigned int m_unexpectedExceptionsInAttempt = 0;
+         bool m_okToFail = false;
+     };
+ 
+@@ -14446,6 +14578,7 @@ namespace Catch {
+ 
+         void testRunStarting( TestRunInfo const& testRunInfo ) override;
+         void testCaseStarting( TestCaseInfo const& testInfo ) override;
++        void testCaseAttemptStarting( TestCaseAttemptInfo const& attemptInfo ) override;
+         void testCasePartialStarting(TestCaseInfo const& testInfo, uint64_t partNumber) override;
+         void sectionStarting( SectionInfo const& sectionInfo ) override;
+         void assertionStarting( AssertionInfo const& assertionInfo ) override;
+@@ -14453,6 +14586,7 @@ namespace Catch {
+         void assertionEnded( AssertionStats const& assertionStats ) override;
+         void sectionEnded( SectionStats const& sectionStats ) override;
+         void testCasePartialEnded(TestCaseStats const& testStats, uint64_t partNumber) override;
++        void testCaseAttemptEnded( TestCaseAttemptStats const& attemptStats ) override;
+         void testCaseEnded( TestCaseStats const& testCaseStats ) override;
+         void testRunEnded( TestRunStats const& testRunStats ) override;
+ 
+@@ -14649,6 +14783,9 @@ namespace Catch {
+ #define CATCH_REPORTER_TAP_HPP_INCLUDED
+ 
+ 
++#include <string>
++#include <vector>
++
+ namespace Catch {
+ 
+     class TAPReporter final : public StreamingReporterBase {
+@@ -14670,10 +14807,29 @@ namespace Catch {
+ 
+         void assertionEnded(AssertionStats const& _assertionStats) override;
+ 
++        void testCaseAttemptStarting(
++            TestCaseAttemptInfo const& attemptInfo ) override;
++
++        void testCaseAttemptEnded(
++            TestCaseAttemptStats const& attemptStats ) override;
++
+         void testRunEnded(TestRunStats const& _testRunStats) override;
+ 
+     private:
++        struct BufferedAssertion {
++            BufferedAssertion( AssertionStats const& _stats,
++                               std::string _testName ):
++                stats( _stats ), testName( CATCH_MOVE( _testName ) ) {}
++
++            AssertionStats stats;
++            std::string testName;
++        };
++
++        void printAssertion( BufferedAssertion const& assertion,
++                             ColourImpl* colour );
++
+         std::size_t counter = 0;
++        std::vector<BufferedAssertion> m_bufferedAssertions;
+     };
+ 
+ } // end namespace Catch
+@@ -14686,6 +14842,8 @@ namespace Catch {
+ 
+ 
+ #include <cstring>
++#include <string>
++#include <vector>
+ 
+ #ifdef __clang__
+ #   pragma clang diagnostic push
+@@ -14723,13 +14881,25 @@ namespace Catch {
+ 
+         void testCaseStarting(TestCaseInfo const& testInfo) override;
+ 
++        void testCaseAttemptStarting(
++            TestCaseAttemptInfo const& attemptInfo ) override;
++
++        void testCaseAttemptEnded(
++            TestCaseAttemptStats const& attemptStats ) override;
++
+         void testCaseEnded(TestCaseStats const& testCaseStats) override;
+ 
+     private:
++        struct BufferedAssertion {
++            std::string serviceMessage;
++            std::string diagnostic;
++        };
++
+         void printSectionHeader(std::ostream& os);
+ 
+         bool m_headerPrintedForThisSection = false;
+         Timer m_testTimer;
++        std::vector<BufferedAssertion> m_bufferedAssertions;
+     };
+ 
+ } // end namespace Catch
+@@ -14766,12 +14936,18 @@ namespace Catch {
+ 
+         void testCaseStarting(TestCaseInfo const& testInfo) override;
+ 
++        void testCaseAttemptStarting(
++            TestCaseAttemptInfo const& attemptInfo ) override;
++
+         void sectionStarting(SectionInfo const& sectionInfo) override;
+ 
+         void assertionEnded(AssertionStats const& assertionStats) override;
+ 
+         void sectionEnded(SectionStats const& sectionStats) override;
+ 
++        void testCaseAttemptEnded(
++            TestCaseAttemptStats const& attemptStats ) override;
++
+         void testCaseEnded(TestCaseStats const& testCaseStats) override;
+ 
+         void testRunEnded(TestRunStats const& testRunStats) override;
+diff --git a/src/catch2/reporters/catch_reporter_junit.cpp b/src/catch2/reporters/catch_reporter_junit.cpp
+index 0cf91fa0..6998a65d 100644
+--- a/src/catch2/reporters/catch_reporter_junit.cpp
++++ b/src/catch2/reporters/catch_reporter_junit.cpp
+@@ -72,7 +72,7 @@ namespace Catch {
+             return rss.str();
+         }
+ 
+-        bool shouldWriteAssertion( AssertionResult const& result ) {
++        bool shouldWriteJunitAssertion( AssertionResult const& result ) {
+             return !result.isOk() ||
+                    result.getResultType() == ResultWas::ExplicitSkip;
+         }
+@@ -106,7 +106,7 @@ namespace Catch {
+             return rss.str();
+         }
+ 
+-        void appendAssertionDiagnostics(
++        void appendJunitAssertionDiagnostics(
+             CumulativeReporterBase::SectionNode const& sectionNode,
+             ReusableStringStream& rss ) {
+             for ( auto const& assertionOrBenchmark :
+@@ -114,13 +114,14 @@ namespace Catch {
+                 if ( assertionOrBenchmark.isAssertion() ) {
+                     auto const& assertion =
+                         assertionOrBenchmark.asAssertion();
+-                    if ( shouldWriteAssertion( assertion.assertionResult ) ) {
++                    if ( shouldWriteJunitAssertion(
++                             assertion.assertionResult ) ) {
+                         rss << formatAssertion( assertion ) << '\n';
+                     }
+                 }
+             }
+             for ( auto const& child : sectionNode.childSections ) {
+-                appendAssertionDiagnostics( *child, rss );
++                appendJunitAssertionDiagnostics( *child, rss );
+             }
+         }
+ 
+@@ -132,7 +133,8 @@ namespace Catch {
+                 rss << "Attempt " << attempt->value.attemptNumber << " of "
+                     << attempt->value.maxAttempts << " failed:\n";
+                 assert( attempt->children.size() == 1 );
+-                appendAssertionDiagnostics( *attempt->children.front(), rss );
++                appendJunitAssertionDiagnostics( *attempt->children.front(),
++                                                 rss );
+             }
+             return rss.str();
+         }
+@@ -361,7 +363,7 @@ namespace Catch {
+ 
+     bool JunitReporter::writeAssertion( AssertionStats const& stats ) {
+         AssertionResult const& result = stats.assertionResult;
+-        if ( !shouldWriteAssertion( result ) ) { return false; }
++        if ( !shouldWriteJunitAssertion( result ) ) { return false; }
+         std::string elementName;
+         switch ( result.getResultType() ) {
+         case ResultWas::ThrewException:
+diff --git a/src/catch2/reporters/catch_reporter_sonarqube.cpp b/src/catch2/reporters/catch_reporter_sonarqube.cpp
+index 688f74f9..8423c19f 100644
+--- a/src/catch2/reporters/catch_reporter_sonarqube.cpp
++++ b/src/catch2/reporters/catch_reporter_sonarqube.cpp
+@@ -30,7 +30,7 @@ namespace Catch {
+             return sstr.str();
+         }
+ 
+-        bool shouldWriteAssertion( AssertionResult const& result ) {
++        bool shouldWriteSonarQubeAssertion( AssertionResult const& result ) {
+             return !result.isOk() ||
+                    result.getResultType() == ResultWas::ExplicitSkip;
+         }
+@@ -68,7 +68,7 @@ namespace Catch {
+             return rss.str();
+         }
+ 
+-        void appendAssertionDiagnostics(
++        void appendSonarQubeAssertionDiagnostics(
+             CumulativeReporterBase::SectionNode const& sectionNode,
+             ReusableStringStream& rss ) {
+             for ( auto const& assertionOrBenchmark :
+@@ -76,14 +76,15 @@ namespace Catch {
+                 if ( assertionOrBenchmark.isAssertion() ) {
+                     auto const& assertion =
+                         assertionOrBenchmark.asAssertion();
+-                    if ( shouldWriteAssertion( assertion.assertionResult ) ) {
++                    if ( shouldWriteSonarQubeAssertion(
++                             assertion.assertionResult ) ) {
+                         rss << makeAssertionMessage( assertion ) << '\n'
+                             << makeAssertionText( assertion ) << '\n';
+                     }
+                 }
+             }
+             for ( auto const& child : sectionNode.childSections ) {
+-                appendAssertionDiagnostics( *child, rss );
++                appendSonarQubeAssertionDiagnostics( *child, rss );
+             }
+         }
+ 
+@@ -106,7 +107,8 @@ namespace Catch {
+             rss << "Attempt " << attempt.value.attemptNumber << " of "
+                 << attempt.value.maxAttempts << " failed:\n";
+             assert( attempt.children.size() == 1 );
+-            appendAssertionDiagnostics( *attempt.children.front(), rss );
++            appendSonarQubeAssertionDiagnostics( *attempt.children.front(),
++                                                 rss );
+             return sanitizeXmlComment( rss.str() );
+         }
+     }
+@@ -181,7 +183,7 @@ namespace Catch {
+ 
+     void SonarQubeReporter::writeAssertion(AssertionStats const& stats, bool okToFail) {
+         AssertionResult const& result = stats.assertionResult;
+-        if ( shouldWriteAssertion( result ) ) {
++        if ( shouldWriteSonarQubeAssertion( result ) ) {
+             std::string elementName;
+             if (okToFail) {
+                 elementName = "skipped";
+-- 
+2.56.0.windows.1
+
