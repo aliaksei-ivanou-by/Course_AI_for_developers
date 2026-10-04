@@ -1,0 +1,453 @@
+From d5568dcf07e3a7b370dd85fbe01fa7d02fef3a20 Mon Sep 17 00:00:00 2001
+From: Aliaksei Ivanou <aliaksei.ivanou@innowise.com>
+Date: Sun, 4 Oct 2026 18:56:55 +0200
+Subject: [PATCH] Add test case attempt reporter events
+
+Add TestCaseAttemptInfo and TestCaseAttemptStats, the attemptCount, maxAttempts and isFlaky fields of TestCaseStats, and the testCaseAttemptStarting and testCaseAttemptEnded events. The events are non-pure virtuals with empty default bodies, so existing reporters and listeners keep compiling; MultiReporter forwards them to listeners, then reporters. Nothing emits them yet.
+
+Tests: SelfTest 'Multireporter forwards attempt events to listeners, then reporters' and 'Attempt events and fields are optional for existing reporters' (tagged [approvals] so the approval baselines stay unchanged).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01GunDRycct3rWzK5p7dpZxP
+---
+ .../interfaces/catch_interfaces_reporter.cpp  |  28 +++
+ .../interfaces/catch_interfaces_reporter.hpp  |  62 +++++
+ src/catch2/reporters/catch_reporter_multi.cpp |  14 ++
+ src/catch2/reporters/catch_reporter_multi.hpp |   2 +
+ .../IntrospectiveTests/Reporters.tests.cpp    | 222 ++++++++++++++++++
+ 5 files changed, 328 insertions(+)
+
+diff --git a/src/catch2/interfaces/catch_interfaces_reporter.cpp b/src/catch2/interfaces/catch_interfaces_reporter.cpp
+index 929c6424..85148126 100644
+--- a/src/catch2/interfaces/catch_interfaces_reporter.cpp
++++ b/src/catch2/interfaces/catch_interfaces_reporter.cpp
+@@ -83,6 +83,31 @@ namespace Catch {
+     {}
+ 
+ 
++    TestCaseAttemptInfo::TestCaseAttemptInfo( TestCaseInfo const& _testInfo,
++                                              std::uint64_t _attemptNumber,
++                                              std::uint64_t _maxAttempts ):
++        testInfo( &_testInfo ),
++        attemptNumber( _attemptNumber ),
++        maxAttempts( _maxAttempts ) {}
++
++    TestCaseAttemptStats::TestCaseAttemptStats( TestCaseInfo const& _testInfo,
++                                                std::uint64_t _attemptNumber,
++                                                std::uint64_t _maxAttempts,
++                                                Totals const& _totals,
++                                                std::string&& _stdOut,
++                                                std::string&& _stdErr,
++                                                bool _aborting,
++                                                bool _isFinal ):
++        testInfo( &_testInfo ),
++        attemptNumber( _attemptNumber ),
++        maxAttempts( _maxAttempts ),
++        totals( _totals ),
++        stdOut( CATCH_MOVE( _stdOut ) ),
++        stdErr( CATCH_MOVE( _stdErr ) ),
++        aborting( _aborting ),
++        isFinal( _isFinal ) {}
++
++
+     TestRunStats::TestRunStats(   TestRunInfo const& _runInfo,
+                     Totals const& _totals,
+                     bool _aborting )
+@@ -93,4 +118,7 @@ namespace Catch {
+ 
+     IEventListener::~IEventListener() = default;
+ 
++    void IEventListener::testCaseAttemptStarting( TestCaseAttemptInfo const& ) {}
++    void IEventListener::testCaseAttemptEnded( TestCaseAttemptStats const& ) {}
++
+ } // end namespace Catch
+diff --git a/src/catch2/interfaces/catch_interfaces_reporter.hpp b/src/catch2/interfaces/catch_interfaces_reporter.hpp
+index edf2955f..0b758bcd 100644
+--- a/src/catch2/interfaces/catch_interfaces_reporter.hpp
++++ b/src/catch2/interfaces/catch_interfaces_reporter.hpp
+@@ -18,6 +18,7 @@
+ #include <catch2/internal/catch_unique_ptr.hpp>
+ #include <catch2/benchmark/detail/catch_benchmark_stats.hpp>
+ 
++#include <cstdint>
+ #include <map>
+ #include <string>
+ #include <vector>
+@@ -97,6 +98,51 @@ namespace Catch {
+         std::string stdOut;
+         std::string stdErr;
+         bool aborting;
++        //! Number of attempts used by the test case, see `--retry-failed`
++        std::uint64_t attemptCount = 1;
++        //! Maximum number of attempts, `--retry-failed` + 1
++        std::uint64_t maxAttempts = 1;
++        //! The test case passed after at least one failed attempt
++        bool isFlaky = false;
++    };
++
++    //! Identifies one attempt of a test case run with `--retry-failed`
++    struct TestCaseAttemptInfo {
++        TestCaseAttemptInfo( TestCaseInfo const& _testInfo,
++                             std::uint64_t _attemptNumber,
++                             std::uint64_t _maxAttempts );
++
++        TestCaseInfo const* testInfo;
++        //! One-based number of this attempt
++        std::uint64_t attemptNumber;
++        //! Maximum number of attempts, `--retry-failed` + 1
++        std::uint64_t maxAttempts;
++    };
++
++    //! Result of one attempt of a test case run with `--retry-failed`
++    struct TestCaseAttemptStats {
++        TestCaseAttemptStats( TestCaseInfo const& _testInfo,
++                              std::uint64_t _attemptNumber,
++                              std::uint64_t _maxAttempts,
++                              Totals const& _totals,
++                              std::string&& _stdOut,
++                              std::string&& _stdErr,
++                              bool _aborting,
++                              bool _isFinal );
++
++        TestCaseInfo const* testInfo;
++        //! One-based number of this attempt
++        std::uint64_t attemptNumber;
++        //! Maximum number of attempts, `--retry-failed` + 1
++        std::uint64_t maxAttempts;
++        //! Totals of this attempt only
++        Totals totals;
++        //! Output captured during this attempt only
++        std::string stdOut;
++        std::string stdErr;
++        bool aborting;
++        //! False if the test case is retried after this attempt
++        bool isFinal;
+     };
+ 
+     struct TestRunStats {
+@@ -171,6 +217,14 @@ namespace Catch {
+ 
+         //! Called _once_ for each TEST_CASE, no matter how many times it is entered
+         virtual void testCaseStarting( TestCaseInfo const& testInfo ) = 0;
++        /**
++         * Called before every attempt of a TEST_CASE when `--retry-failed`
++         * is greater than 0, including the first attempt
++         *
++         * Not pure virtual, so that existing reporters and listeners keep
++         * compiling; the default does nothing.
++         */
++        virtual void testCaseAttemptStarting( TestCaseAttemptInfo const& attemptInfo );
+         //! Called _every time_ a TEST_CASE is entered, including repeats (due to sections)
+         virtual void testCasePartialStarting( TestCaseInfo const& testInfo, uint64_t partNumber ) = 0;
+         //! Called when a `SECTION` is being entered. Not called for skipped sections
+@@ -195,6 +249,14 @@ namespace Catch {
+         virtual void sectionEnded( SectionStats const& sectionStats ) = 0;
+         //! Called _every time_ a TEST_CASE is entered, including repeats (due to sections)
+         virtual void testCasePartialEnded(TestCaseStats const& testCaseStats, uint64_t partNumber ) = 0;
++        /**
++         * Called after every attempt of a TEST_CASE when `--retry-failed`
++         * is greater than 0, including the final attempt
++         *
++         * Not pure virtual, so that existing reporters and listeners keep
++         * compiling; the default does nothing.
++         */
++        virtual void testCaseAttemptEnded( TestCaseAttemptStats const& attemptStats );
+         //! Called _once_ for each TEST_CASE, no matter how many times it is entered
+         virtual void testCaseEnded( TestCaseStats const& testCaseStats ) = 0;
+         /**
+diff --git a/src/catch2/reporters/catch_reporter_multi.cpp b/src/catch2/reporters/catch_reporter_multi.cpp
+index 6bf9bcbd..5528b215 100644
+--- a/src/catch2/reporters/catch_reporter_multi.cpp
++++ b/src/catch2/reporters/catch_reporter_multi.cpp
+@@ -96,6 +96,13 @@ namespace Catch {
+         }
+     }
+ 
++    void MultiReporter::testCaseAttemptStarting(
++        TestCaseAttemptInfo const& attemptInfo ) {
++        for ( auto& reporterish : m_reporterLikes ) {
++            reporterish->testCaseAttemptStarting( attemptInfo );
++        }
++    }
++
+     void
+     MultiReporter::testCasePartialStarting( TestCaseInfo const& testInfo,
+                                                 uint64_t partNumber ) {
+@@ -152,6 +159,13 @@ namespace Catch {
+         }
+     }
+ 
++    void MultiReporter::testCaseAttemptEnded(
++        TestCaseAttemptStats const& attemptStats ) {
++        for ( auto& reporterish : m_reporterLikes ) {
++            reporterish->testCaseAttemptEnded( attemptStats );
++        }
++    }
++
+     void MultiReporter::testCaseEnded( TestCaseStats const& testCaseStats ) {
+         for ( auto& reporterish : m_reporterLikes ) {
+             reporterish->testCaseEnded( testCaseStats );
+diff --git a/src/catch2/reporters/catch_reporter_multi.hpp b/src/catch2/reporters/catch_reporter_multi.hpp
+index d206663e..38763fce 100644
+--- a/src/catch2/reporters/catch_reporter_multi.hpp
++++ b/src/catch2/reporters/catch_reporter_multi.hpp
+@@ -52,6 +52,7 @@ namespace Catch {
+ 
+         void testRunStarting( TestRunInfo const& testRunInfo ) override;
+         void testCaseStarting( TestCaseInfo const& testInfo ) override;
++        void testCaseAttemptStarting( TestCaseAttemptInfo const& attemptInfo ) override;
+         void testCasePartialStarting(TestCaseInfo const& testInfo, uint64_t partNumber) override;
+         void sectionStarting( SectionInfo const& sectionInfo ) override;
+         void assertionStarting( AssertionInfo const& assertionInfo ) override;
+@@ -59,6 +60,7 @@ namespace Catch {
+         void assertionEnded( AssertionStats const& assertionStats ) override;
+         void sectionEnded( SectionStats const& sectionStats ) override;
+         void testCasePartialEnded(TestCaseStats const& testStats, uint64_t partNumber) override;
++        void testCaseAttemptEnded( TestCaseAttemptStats const& attemptStats ) override;
+         void testCaseEnded( TestCaseStats const& testCaseStats ) override;
+         void testRunEnded( TestRunStats const& testRunStats ) override;
+ 
+diff --git a/tests/SelfTest/IntrospectiveTests/Reporters.tests.cpp b/tests/SelfTest/IntrospectiveTests/Reporters.tests.cpp
+index 4ff793f0..947920c5 100644
+--- a/tests/SelfTest/IntrospectiveTests/Reporters.tests.cpp
++++ b/tests/SelfTest/IntrospectiveTests/Reporters.tests.cpp
+@@ -25,7 +25,10 @@
+ #include <catch2/reporters/catch_reporter_multi.hpp>
+ #include <catch2/internal/catch_move_and_forward.hpp>
+ 
++#include <cstdint>
+ #include <sstream>
++#include <string>
++#include <vector>
+ 
+ namespace {
+     class StringIStream : public Catch::IStream {
+@@ -217,6 +220,225 @@ TEST_CASE("Multireporter calls reporters and listeners in correct order",
+     REQUIRE( records == expected );
+ }
+ 
++namespace {
++    std::string describeAttempt( std::string const& witness,
++                                 char const* event,
++                                 Catch::TestCaseInfo const* testInfo,
++                                 std::uint64_t attemptNumber,
++                                 std::uint64_t maxAttempts ) {
++        return witness + ' ' + event + ' ' + testInfo->name + ' ' +
++               std::to_string( attemptNumber ) + '/' +
++               std::to_string( maxAttempts );
++    }
++
++    std::string describeAttemptEnd( std::string const& witness,
++                                    Catch::TestCaseAttemptStats const& stats ) {
++        return describeAttempt( witness,
++                                "ended",
++                                stats.testInfo,
++                                stats.attemptNumber,
++                                stats.maxAttempts ) +
++               " failed=" + std::to_string( stats.totals.assertions.failed ) +
++               " out=" + stats.stdOut + " err=" + stats.stdErr +
++               ( stats.aborting ? " aborting" : "" ) +
++               ( stats.isFinal ? " final" : " retry" );
++    }
++
++    // A listener that records the attempt events it receives
++    class AttemptMockListener : public Catch::EventListenerBase {
++        std::string m_witness;
++        std::vector<std::string>& m_recorder;
++    public:
++        AttemptMockListener( std::string witness,
++                             std::vector<std::string>& recorder,
++                             Catch::IConfig const* config ):
++            EventListenerBase( config ),
++            m_witness( CATCH_MOVE( witness ) ),
++            m_recorder( recorder ) {}
++
++        void testCaseAttemptStarting(
++            Catch::TestCaseAttemptInfo const& attemptInfo ) override {
++            m_recorder.push_back( describeAttempt( m_witness,
++                                                   "starting",
++                                                   attemptInfo.testInfo,
++                                                   attemptInfo.attemptNumber,
++                                                   attemptInfo.maxAttempts ) );
++        }
++        void testCaseAttemptEnded(
++            Catch::TestCaseAttemptStats const& attemptStats ) override {
++            m_recorder.push_back( describeAttemptEnd( m_witness, attemptStats ) );
++        }
++    };
++    // A reporter that records the attempt events it receives
++    class AttemptMockReporter : public Catch::StreamingReporterBase {
++        std::string m_witness;
++        std::vector<std::string>& m_recorder;
++    public:
++        AttemptMockReporter( std::string witness,
++                             std::vector<std::string>& recorder,
++                             Catch::ReporterConfig&& config ):
++            StreamingReporterBase( CATCH_MOVE( config ) ),
++            m_witness( CATCH_MOVE( witness ) ),
++            m_recorder( recorder ) {}
++
++        void testCaseAttemptStarting(
++            Catch::TestCaseAttemptInfo const& attemptInfo ) override {
++            m_recorder.push_back( describeAttempt( m_witness,
++                                                   "starting",
++                                                   attemptInfo.testInfo,
++                                                   attemptInfo.attemptNumber,
++                                                   attemptInfo.maxAttempts ) );
++        }
++        void testCaseAttemptEnded(
++            Catch::TestCaseAttemptStats const& attemptStats ) override {
++            m_recorder.push_back( describeAttemptEnd( m_witness, attemptStats ) );
++        }
++    };
++
++    // A reporter written against the interface before attempt events
++    // existed: it implements every pure virtual member and nothing else.
++    class PreAttemptEventsReporter : public Catch::IEventListener {
++    public:
++        PreAttemptEventsReporter( Catch::IConfig const* config ):
++            IEventListener( config ) {}
++
++        void noMatchingTestCases( Catch::StringRef ) override {}
++        void reportInvalidTestSpec( Catch::StringRef ) override {}
++        void testRunStarting( Catch::TestRunInfo const& ) override {}
++        void testCaseStarting( Catch::TestCaseInfo const& ) override {}
++        void testCasePartialStarting( Catch::TestCaseInfo const&,
++                                      uint64_t ) override {}
++        void sectionStarting( Catch::SectionInfo const& ) override {}
++        void benchmarkPreparing( Catch::StringRef ) override {}
++        void benchmarkStarting( Catch::BenchmarkInfo const& ) override {}
++        void benchmarkEnded( Catch::BenchmarkStats<> const& ) override {}
++        void benchmarkFailed( Catch::StringRef ) override {}
++        void assertionStarting( Catch::AssertionInfo const& ) override {}
++        void assertionEnded( Catch::AssertionStats const& ) override {}
++        void sectionEnded( Catch::SectionStats const& ) override {}
++        void testCasePartialEnded( Catch::TestCaseStats const&,
++                                   uint64_t ) override {}
++        void testCaseEnded( Catch::TestCaseStats const& ) override {}
++        void testRunEnded( Catch::TestRunStats const& ) override {}
++        void skipTest( Catch::TestCaseInfo const& ) override {}
++        void fatalErrorEncountered( Catch::StringRef ) override {}
++        void listReporters(
++            std::vector<Catch::ReporterDescription> const& ) override {}
++        void listListeners(
++            std::vector<Catch::ListenerDescription> const& ) override {}
++        void listTests( std::vector<Catch::TestCaseHandle> const& ) override {}
++        void listTags( std::vector<Catch::TagInfo> const& ) override {}
++    };
++} // namespace
++
++// Tagged [approvals] so that the approval baselines stay unchanged
++TEST_CASE( "Multireporter forwards attempt events to listeners, then reporters",
++           "[approvals][reporters][multi-reporter][retry-failed]" ) {
++    Catch::Config config( Catch::ConfigData{} );
++    auto testInfo = Catch::makeTestCaseInfo(
++        "", { "retried test", "[tag]" }, CATCH_INTERNAL_LINEINFO );
++
++    // Reporters are added before listeners, to check that listeners are
++    // called first anyway.
++    Catch::MultiReporter multiReporter( &config );
++    std::vector<std::string> records;
++    multiReporter.addReporter( Catch::Detail::make_unique<AttemptMockReporter>(
++        "reporter-1", records, makeDummyRepConfig( config ) ) );
++    multiReporter.addListener( Catch::Detail::make_unique<AttemptMockListener>(
++        "listener-1", records, &config ) );
++    multiReporter.addListener( Catch::Detail::make_unique<AttemptMockListener>(
++        "listener-2", records, &config ) );
++    multiReporter.addReporter( Catch::Detail::make_unique<AttemptMockReporter>(
++        "reporter-2", records, makeDummyRepConfig( config ) ) );
++
++    SECTION( "Attempt start" ) {
++        multiReporter.testCaseAttemptStarting(
++            Catch::TestCaseAttemptInfo( *testInfo, 2, 3 ) );
++
++        std::vector<std::string> expected{
++            "listener-1 starting retried test 2/3",
++            "listener-2 starting retried test 2/3",
++            "reporter-1 starting retried test 2/3",
++            "reporter-2 starting retried test 2/3" };
++        REQUIRE( records == expected );
++    }
++    SECTION( "Attempt end" ) {
++        Catch::Totals totals;
++        totals.assertions.failed = 1;
++        multiReporter.testCaseAttemptEnded( Catch::TestCaseAttemptStats(
++            *testInfo, 1, 3, totals, "out", "err", false, false ) );
++
++        std::vector<std::string> expected{
++            "listener-1 ended retried test 1/3 failed=1 out=out err=err retry",
++            "listener-2 ended retried test 1/3 failed=1 out=out err=err retry",
++            "reporter-1 ended retried test 1/3 failed=1 out=out err=err retry",
++            "reporter-2 ended retried test 1/3 failed=1 out=out err=err retry" };
++        REQUIRE( records == expected );
++    }
++    SECTION( "Final attempt end" ) {
++        multiReporter.testCaseAttemptEnded( Catch::TestCaseAttemptStats(
++            *testInfo, 3, 3, Catch::Totals{}, "", "", true, true ) );
++
++        std::vector<std::string> expected{
++            "listener-1 ended retried test 3/3 failed=0 out= err= aborting final",
++            "listener-2 ended retried test 3/3 failed=0 out= err= aborting final",
++            "reporter-1 ended retried test 3/3 failed=0 out= err= aborting final",
++            "reporter-2 ended retried test 3/3 failed=0 out= err= aborting final" };
++        REQUIRE( records == expected );
++    }
++}
++
++// Tagged [approvals] so that the approval baselines stay unchanged
++TEST_CASE( "Attempt events and fields are optional for existing reporters",
++           "[approvals][reporters][retry-failed]" ) {
++    Catch::Config config( Catch::ConfigData{} );
++    auto testInfo = Catch::makeTestCaseInfo(
++        "", { "retried test", "[tag]" }, CATCH_INTERNAL_LINEINFO );
++    Catch::TestCaseAttemptInfo const attemptInfo( *testInfo, 1, 2 );
++    Catch::TestCaseAttemptStats const attemptStats(
++        *testInfo, 1, 2, Catch::Totals{}, "", "", false, true );
++
++    SECTION( "Direct IEventListener implementations get the default no-op" ) {
++        PreAttemptEventsReporter reporter( &config );
++        Catch::IEventListener& listener = reporter;
++
++        REQUIRE_NOTHROW( listener.testCaseAttemptStarting( attemptInfo ) );
++        REQUIRE_NOTHROW( listener.testCaseAttemptEnded( attemptStats ) );
++    }
++    SECTION( "Multireporter mixes reporters with and without overrides" ) {
++        std::vector<std::string> records;
++        Catch::MultiReporter multiReporter( &config );
++        multiReporter.addReporter(
++            Catch::Detail::make_unique<PreAttemptEventsReporter>( &config ) );
++        multiReporter.addListener( Catch::Detail::make_unique<AttemptMockListener>(
++            "listener", records, &config ) );
++
++        multiReporter.testCaseAttemptStarting( attemptInfo );
++        multiReporter.testCaseAttemptEnded( attemptStats );
++
++        std::vector<std::string> expected{
++            "listener starting retried test 1/2",
++            "listener ended retried test 1/2 failed=0 out= err= final" };
++        REQUIRE( records == expected );
++    }
++    SECTION( "TestCaseStats built with the existing constructor" ) {
++        Catch::TestCaseStats stats(
++            *testInfo, Catch::Totals{}, std::string(), std::string(), false );
++
++        REQUIRE( stats.attemptCount == 1 );
++        REQUIRE( stats.maxAttempts == 1 );
++        REQUIRE_FALSE( stats.isFlaky );
++    }
++    SECTION( "Attempt numbers are 64-bit" ) {
++        std::uint64_t const beyondUInt32 = 4294967296ULL;
++        Catch::TestCaseAttemptInfo const largest(
++            *testInfo, beyondUInt32, beyondUInt32 );
++
++        REQUIRE( largest.attemptNumber == beyondUInt32 );
++        REQUIRE( largest.maxAttempts == beyondUInt32 );
++    }
++}
++
+ namespace {
+     // A listener that sets it preferences to test that multireporter,
+     // properly sets up its own preferences
+-- 
+2.56.0.windows.1
+
