@@ -1,0 +1,969 @@
+From a1230467d8dfb0496c34924780b0242fc8c0ee09 Mon Sep 17 00:00:00 2001
+From: Aliaksei Ivanou <aliaksei.ivanou@innowise.com>
+Date: Sun, 4 Oct 2026 19:28:14 +0200
+Subject: [PATCH] Add retry loop with fresh test case attempts
+
+Run failed test cases up to the configured retry budget inside RunContext. Reset trackers, fixtures, generators, and RNG state for each attempt, restore counters from superseded failures, emit balanced attempt events, and report final flaky metadata with cumulative output.
+
+Expand X96 and its Python driver to cover execution limits, independent budgets, sections, generators, fixture lifecycles, output retention, RNG reproducibility, and legacy and multi-reporter compatibility.
+
+Tests: phase6-validate.ps1 T05 basic (92/92) and all (156/156).
+---
+ src/catch2/internal/catch_run_context.cpp |  84 ++++-
+ src/catch2/internal/catch_run_context.hpp |   2 +
+ tests/ExtraTests/X96-RetryFailed.cpp      | 273 ++++++++++++++-
+ tests/TestScripts/testRetryFailed.py      | 409 +++++++++++++++++++++-
+ 4 files changed, 744 insertions(+), 24 deletions(-)
+
+diff --git a/src/catch2/internal/catch_run_context.cpp b/src/catch2/internal/catch_run_context.cpp
+index 973a0ee3..2dd7b782 100644
+--- a/src/catch2/internal/catch_run_context.cpp
++++ b/src/catch2/internal/catch_run_context.cpp
+@@ -359,27 +359,74 @@ namespace Catch {
+     }
+ 
+     Totals RunContext::runTest(TestCaseHandle const& testCase) {
+-        updateTotalsFromAtomics();
+-        const Totals prevTotals = m_totals;
+-
+         auto const& testInfo = testCase.getTestCaseInfo();
+         m_reporter->testCaseStarting(testInfo);
+ 
++        auto const retryCount = m_config->retryFailed();
++        auto const maxAttempts =
++            static_cast<std::uint64_t>( retryCount ) + 1;
++        std::uint64_t retriesUsed = 0;
+         std::uint64_t testRuns = 0;
+-        auto attemptResult = runTestAttempt( testCase, prevTotals, testRuns );
++        Totals finalTotals;
++        std::string redirectedCout;
++        std::string redirectedCerr;
++
++        while ( true ) {
++            updateTotalsFromAtomics();
++            const Totals totalsAtAttemptStart = m_totals;
++            const Counts assertionsAtAttemptStart = getAssertionCounts();
++            const std::uint64_t attemptNumber = retriesUsed + 1;
++
++            if ( retryCount > 0 ) {
++                m_reporter->testCaseAttemptStarting( TestCaseAttemptInfo(
++                    testInfo, attemptNumber, maxAttempts ) );
++            }
++
++            auto attemptResult = runTestAttempt(
++                testCase, totalsAtAttemptStart, testRuns );
++            finalTotals = attemptResult.totals;
++            redirectedCout += attemptResult.stdOut;
++            redirectedCerr += attemptResult.stdErr;
++
++            const bool retry =
++                attemptResult.totals.testCases.failed > 0 &&
++                retriesUsed < retryCount && !aborting();
++
++            if ( retryCount > 0 ) {
++                m_reporter->testCaseAttemptEnded( TestCaseAttemptStats(
++                    testInfo,
++                    attemptNumber,
++                    maxAttempts,
++                    attemptResult.totals,
++                    CATCH_MOVE( attemptResult.stdOut ),
++                    CATCH_MOVE( attemptResult.stdErr ),
++                    aborting(),
++                    !retry ) );
++            }
++
++            if ( !retry ) { break; }
++
++            setAssertionCounts( assertionsAtAttemptStart );
++            updateTotalsFromAtomics();
++            ++retriesUsed;
++        }
+ 
+-        m_totals.testCases += attemptResult.totals.testCases;
+-        m_reporter->testCaseEnded(
+-            TestCaseStats( testInfo,
+-                           attemptResult.totals,
+-                           CATCH_MOVE( attemptResult.stdOut ),
+-                           CATCH_MOVE( attemptResult.stdErr ),
+-                           aborting() ) );
++        m_totals.testCases += finalTotals.testCases;
++        auto testCaseStats = TestCaseStats( testInfo,
++                                            finalTotals,
++                                            CATCH_MOVE( redirectedCout ),
++                                            CATCH_MOVE( redirectedCerr ),
++                                            aborting() );
++        testCaseStats.attemptCount = retriesUsed + 1;
++        testCaseStats.maxAttempts = maxAttempts;
++        testCaseStats.isFlaky =
++            retriesUsed > 0 && finalTotals.testCases.passed > 0;
++        m_reporter->testCaseEnded( testCaseStats );
+ 
+         m_activeTestCase = nullptr;
+         m_testCaseTracker = nullptr;
+ 
+-        return attemptResult.totals;
++        return finalTotals;
+     }
+ 
+     RunContext::TestCaseAttemptResult RunContext::runTestAttempt(
+@@ -751,7 +798,11 @@ namespace Catch {
+     }
+ 
+     void RunContext::updateTotalsFromAtomics() {
+-        m_totals.assertions = Counts{
++        m_totals.assertions = getAssertionCounts();
++    }
++
++    Counts RunContext::getAssertionCounts() const {
++        return Counts{
+             m_atomicAssertionCount.passed,
+             m_atomicAssertionCount.failed,
+             m_atomicAssertionCount.failedButOk,
+@@ -759,6 +810,13 @@ namespace Catch {
+         };
+     }
+ 
++    void RunContext::setAssertionCounts( Counts const& counts ) {
++        m_atomicAssertionCount.passed = counts.passed;
++        m_atomicAssertionCount.failed = counts.failed;
++        m_atomicAssertionCount.failedButOk = counts.failedButOk;
++        m_atomicAssertionCount.skipped = counts.skipped;
++    }
++
+     bool RunContext::aborting() const {
+         return m_atomicAssertionCount.failed >= m_abortAfterXFailedAssertions;
+     }
+diff --git a/src/catch2/internal/catch_run_context.hpp b/src/catch2/internal/catch_run_context.hpp
+index e0c597dd..d9f13e44 100644
+--- a/src/catch2/internal/catch_run_context.hpp
++++ b/src/catch2/internal/catch_run_context.hpp
+@@ -117,6 +117,8 @@ namespace Catch {
+         void assertionPassedFastPath( SourceLineInfo lineInfo );
+         // Update the non-thread-safe m_totals from the atomic assertion counts.
+         void updateTotalsFromAtomics();
++        Counts getAssertionCounts() const;
++        void setAssertionCounts( Counts const& counts );
+ 
+         TestCaseAttemptResult
+         runTestAttempt( TestCaseHandle const& testCase,
+diff --git a/tests/ExtraTests/X96-RetryFailed.cpp b/tests/ExtraTests/X96-RetryFailed.cpp
+index 8e289a72..6cf453b8 100644
+--- a/tests/ExtraTests/X96-RetryFailed.cpp
++++ b/tests/ExtraTests/X96-RetryFailed.cpp
+@@ -15,6 +15,7 @@
+ 
+ #include <catch2/catch_test_case_info.hpp>
+ #include <catch2/catch_test_macros.hpp>
++#include <catch2/generators/catch_generators_all.hpp>
+ #include <catch2/internal/catch_enforce.hpp>
+ #include <catch2/reporters/catch_reporter_event_listener.hpp>
+ #include <catch2/reporters/catch_reporter_registrars.hpp>
+@@ -71,6 +72,13 @@ namespace {
+                << " err=\"" << escapeOutput( stats.stdErr ) << "\"";
+     }
+ 
++    struct AttemptEventCounts {
++        std::uint64_t starts = 0;
++        std::uint64_t ends = 0;
++    };
++
++    AttemptEventCounts attemptListenerCounts;
++
+     class RetryRecorder final : public Catch::StreamingReporterBase {
+         Catch::TestCaseInfo const* m_testCase = nullptr;
+         bool m_attemptOpen = false;
+@@ -88,6 +96,7 @@ namespace {
+         explicit RetryRecorder( Catch::ReporterConfig&& config ):
+             StreamingReporterBase( CATCH_MOVE( config ) ) {
+             m_preferences.shouldRedirectStdOut = true;
++            m_preferences.shouldReportAllAssertions = true;
+             m_preferences.shouldReportAllAssertionStarts = false;
+         }
+ 
+@@ -116,10 +125,15 @@ namespace {
+             m_attemptOpen = true;
+             m_attemptNumber = attemptInfo.attemptNumber;
+             m_maxAttempts = attemptInfo.maxAttempts;
++            CATCH_ENFORCE( attemptListenerCounts.starts > 0,
++                           "attempt listener did not run before reporter" );
+             m_stream << "test-case-attempt-starting name=\""
+                      << attemptInfo.testInfo->name << "\" attempt="
+                      << attemptInfo.attemptNumber << '/'
+-                     << attemptInfo.maxAttempts << '\n';
++                     << attemptInfo.maxAttempts
++                     << " listener-starts=" << attemptListenerCounts.starts
++                     << " listener-ends=" << attemptListenerCounts.ends
++                     << '\n';
+         }
+ 
+         void testCasePartialStarting( Catch::TestCaseInfo const& testInfo,
+@@ -135,6 +149,29 @@ namespace {
+                      << "\" part=" << partNumber << '\n';
+         }
+ 
++        void assertionEnded( Catch::AssertionStats const& stats ) override {
++            auto const& result = stats.assertionResult;
++            m_stream << "assertion-ended ok="
++                     << ( result.isOk() ? "true" : "false" )
++                     << " succeeded="
++                     << ( result.succeeded() ? "true" : "false" )
++                     << " expression=\""
++                     << escapeOutput(
++                            static_cast<std::string>( result.getExpression() ) )
++                     << "\" expanded=\""
++                     << escapeOutput( static_cast<std::string>(
++                            result.getExpandedExpression() ) )
++                     << "\" message=\""
++                     << escapeOutput(
++                            static_cast<std::string>( result.getMessage() ) )
++                     << "\"";
++            for ( auto const& message : stats.infoMessages ) {
++                m_stream << " info=\"" << escapeOutput( message.message )
++                         << "\"";
++            }
++            m_stream << '\n';
++        }
++
+         void testCasePartialEnded( Catch::TestCaseStats const& stats,
+                                    std::uint64_t partNumber ) override {
+             enforceTestCase( stats.testInfo );
+@@ -155,9 +192,13 @@ namespace {
+             CATCH_ENFORCE( m_attemptNumber == stats.attemptNumber &&
+                                m_maxAttempts == stats.maxAttempts,
+                            "retry-recorder received mismatched attempt numbers" );
++            CATCH_ENFORCE( attemptListenerCounts.ends > 0,
++                           "attempt listener did not run before reporter" );
+             m_stream << "test-case-attempt-ended name=\""
+                      << stats.testInfo->name << "\" attempt="
+-                     << stats.attemptNumber << '/' << stats.maxAttempts;
++                     << stats.attemptNumber << '/' << stats.maxAttempts
++                     << " listener-starts=" << attemptListenerCounts.starts
++                     << " listener-ends=" << attemptListenerCounts.ends;
+             writeStats( m_stream, stats );
+             m_stream << '\n';
+             m_attemptOpen = false;
+@@ -180,6 +221,12 @@ namespace {
+         void testRunEnded( Catch::TestRunStats const& stats ) override {
+             CATCH_ENFORCE( !m_testCase && !m_attemptOpen && !m_partialRunOpen,
+                            "retry-recorder ended the run with an open event" );
++            m_stream << "test-run-ended assertions={";
++            writeCounts( m_stream, stats.totals.assertions );
++            m_stream << "} test-cases={";
++            writeCounts( m_stream, stats.totals.testCases );
++            m_stream << "} aborting="
++                     << ( stats.aborting ? "true" : "false" ) << '\n';
+             StreamingReporterBase::testRunEnded( stats );
+         }
+     };
+@@ -195,6 +242,21 @@ namespace {
+ 
+     LegacyEventCounts legacyListenerCounts;
+ 
++    class AttemptListener final : public Catch::EventListenerBase {
++    public:
++        using EventListenerBase::EventListenerBase;
++
++        void testCaseAttemptStarting(
++            Catch::TestCaseAttemptInfo const& ) override {
++            ++attemptListenerCounts.starts;
++        }
++
++        void testCaseAttemptEnded(
++            Catch::TestCaseAttemptStats const& ) override {
++            ++attemptListenerCounts.ends;
++        }
++    };
++
+     // This listener intentionally implements only the reporter API that
+     // existed before retry attempt events were added.
+     class LegacyListener final : public Catch::EventListenerBase {
+@@ -289,11 +351,84 @@ namespace {
+     unsigned int CountingFixture::constructions = 0;
+     unsigned int CountingFixture::destructions = 0;
+ 
++    unsigned int immediateExecutions = 0;
++    unsigned int failOnceExecutions = 0;
++    unsigned int failTwiceExecutions = 0;
++    unsigned int alwaysFailExecutions = 0;
++    unsigned int independentXExecutions = 0;
++    unsigned int independentYExecutions = 0;
++
++    struct SimpleSectionFixture {
++        static unsigned int constructions;
++        unsigned int const attempt;
++
++        SimpleSectionFixture(): attempt( ++constructions ) {}
++    };
++
++    unsigned int SimpleSectionFixture::constructions = 0;
++
++    struct NestedSectionFixture {
++        static unsigned int constructions;
++        unsigned int const attempt;
++
++        NestedSectionFixture(): attempt( ++constructions ) {}
++    };
++
++    unsigned int NestedSectionFixture::constructions = 0;
++
++    struct GeneratorFixture {
++        static unsigned int constructions;
++        unsigned int const attempt;
++
++        GeneratorFixture(): attempt( ++constructions ) {}
++    };
++
++    unsigned int GeneratorFixture::constructions = 0;
++
++    struct GeneratorSectionFixture {
++        static unsigned int constructions;
++        unsigned int const attempt;
++
++        GeneratorSectionFixture(): attempt( ++constructions ) {}
++    };
++
++    unsigned int GeneratorSectionFixture::constructions = 0;
++
++    struct PersistentLifecycleFixture {
++        static unsigned int constructions;
++        static unsigned int destructions;
++        unsigned int const attempt;
++
++        PersistentLifecycleFixture(): attempt( ++constructions ) {}
++        ~PersistentLifecycleFixture() { ++destructions; }
++    };
++
++    unsigned int PersistentLifecycleFixture::constructions = 0;
++    unsigned int PersistentLifecycleFixture::destructions = 0;
++
++    struct PerRunLifecycleFixture {
++        static unsigned int constructions;
++        static unsigned int destructions;
++        static unsigned int entries;
++        unsigned int const instance;
++
++        PerRunLifecycleFixture(): instance( ++constructions ) {}
++        ~PerRunLifecycleFixture() { ++destructions; }
++    };
++
++    unsigned int PerRunLifecycleFixture::constructions = 0;
++    unsigned int PerRunLifecycleFixture::destructions = 0;
++    unsigned int PerRunLifecycleFixture::entries = 0;
++
++    unsigned int randomEntries = 0;
++
+ } // namespace
+ 
+ CATCH_REGISTER_REPORTER( "retry-recorder", RetryRecorder )
++CATCH_REGISTER_REPORTER( "retry-recorder-2", RetryRecorder )
+ CATCH_REGISTER_REPORTER( "legacy-reporter", LegacyReporter )
+ CATCH_REGISTER_LISTENER( LegacyListener )
++CATCH_REGISTER_LISTENER( AttemptListener )
+ 
+ TEST_CASE_METHOD( CountingFixture,
+                   "retry zero fixture passes",
+@@ -320,3 +455,137 @@ TEST_CASE_METHOD( CountingFixture,
+         CHECK( instance >= 2 );
+     }
+ }
++
++TEST_CASE( "retry immediate pass",
++           "[.retry-immediate][.retry-mixed]" ) {
++    ++immediateExecutions;
++    std::cout << "immediate execution=" << immediateExecutions << '\n';
++    CHECK( immediateExecutions == 1 );
++}
++
++TEST_CASE( "retry fail once",
++           "[.retry-fail-once][.retry-mixed]" ) {
++    ++failOnceExecutions;
++    INFO( "fail-once-info execution=" << failOnceExecutions );
++    std::cout << "fail-once-out execution=" << failOnceExecutions << '\n';
++    std::cerr << "fail-once-err execution=" << failOnceExecutions << '\n';
++    CHECK( failOnceExecutions >= 2 );
++}
++
++TEST_CASE( "retry fail twice",
++           "[.retry-fail-twice]" ) {
++    ++failTwiceExecutions;
++    std::cout << "fail-twice execution=" << failTwiceExecutions << '\n';
++    CHECK( failTwiceExecutions >= 3 );
++}
++
++TEST_CASE( "retry always fails",
++           "[.retry-always-fails][.retry-mixed]" ) {
++    ++alwaysFailExecutions;
++    std::cout << "always-fail execution=" << alwaysFailExecutions << '\n';
++    CHECK( false );
++}
++
++TEST_CASE( "retry independent X", "[.retry-independent]" ) {
++    ++independentXExecutions;
++    std::cout << "independent-X execution=" << independentXExecutions << '\n';
++    CHECK( independentXExecutions >= 2 );
++}
++
++TEST_CASE( "retry independent Y", "[.retry-independent]" ) {
++    ++independentYExecutions;
++    std::cout << "independent-Y execution=" << independentYExecutions << '\n';
++    CHECK( independentYExecutions >= 3 );
++}
++
++TEST_CASE_PERSISTENT_FIXTURE( SimpleSectionFixture,
++                              "retry simple section",
++                              "[.retry-simple-section]" ) {
++    SECTION( "only" ) {
++        std::cout << "simple-section attempt=" << attempt << '\n';
++        CHECK( attempt >= 2 );
++    }
++}
++
++TEST_CASE_PERSISTENT_FIXTURE( NestedSectionFixture,
++                              "retry nested sections",
++                              "[.retry-nested-sections]" ) {
++    SECTION( "A" ) {
++        SECTION( "A1" ) {
++            std::cout << "nested attempt=" << attempt << " path=A/A1\n";
++            CHECK( true );
++        }
++        SECTION( "A2" ) {
++            std::cout << "nested attempt=" << attempt << " path=A/A2\n";
++            CHECK( true );
++        }
++    }
++    SECTION( "B" ) {
++        std::cout << "nested attempt=" << attempt << " path=B\n";
++        CHECK( attempt >= 2 );
++    }
++}
++
++TEST_CASE_PERSISTENT_FIXTURE( GeneratorFixture,
++                              "retry generator",
++                              "[.retry-generator]" ) {
++    auto const value = GENERATE( 1, 2, 3 );
++    std::cout << "generator attempt=" << attempt << " value=" << value
++              << '\n';
++    CHECK( ( value != 3 || attempt >= 2 ) );
++}
++
++TEST_CASE_PERSISTENT_FIXTURE( GeneratorSectionFixture,
++                              "retry generator with sections",
++                              "[.retry-generator-sections]" ) {
++    auto const value = GENERATE( 1, 2 );
++    SECTION( "A" ) {
++        std::cout << "generator-section attempt=" << attempt
++                  << " value=" << value << " path=A\n";
++        CHECK( true );
++    }
++    SECTION( "B" ) {
++        std::cout << "generator-section attempt=" << attempt
++                  << " value=" << value << " path=B\n";
++        CHECK( ( value != 2 || attempt >= 2 ) );
++    }
++}
++
++TEST_CASE_PERSISTENT_FIXTURE( PersistentLifecycleFixture,
++                              "retry fixture 1 persistent exercise",
++                              "[.retry-fixtures]" ) {
++    CHECK( constructions == destructions + 1 );
++    SECTION( "A" ) {
++        std::cout << "persistent attempt=" << attempt << " path=A\n";
++        CHECK( true );
++    }
++    SECTION( "B" ) {
++        std::cout << "persistent attempt=" << attempt << " path=B\n";
++        CHECK( attempt >= 2 );
++    }
++}
++
++TEST_CASE_METHOD( PerRunLifecycleFixture,
++                  "retry fixture 2 per-run exercise",
++                  "[.retry-fixtures]" ) {
++    ++entries;
++    std::cout << "per-run entry=" << entries << " instance=" << instance
++              << '\n';
++    CHECK( constructions == destructions + 1 );
++    SECTION( "A" ) { CHECK( true ); }
++    SECTION( "B" ) { CHECK( entries >= 4 ); }
++}
++
++TEST_CASE( "retry fixture 3 lifecycle audit", "[.retry-fixtures]" ) {
++    CHECK( PersistentLifecycleFixture::constructions == 2 );
++    CHECK( PersistentLifecycleFixture::destructions == 2 );
++    CHECK( PerRunLifecycleFixture::constructions == 4 );
++    CHECK( PerRunLifecycleFixture::destructions == 4 );
++}
++
++TEST_CASE( "retry random generator", "[.retry-random]" ) {
++    auto const value = GENERATE( take( 3, random( 0, 1000 ) ) );
++    ++randomEntries;
++    std::cout << "random value=" << value << '\n';
++    CHECK( randomEntries > 3 );
++}
+diff --git a/tests/TestScripts/testRetryFailed.py b/tests/TestScripts/testRetryFailed.py
+index 097d6963..2deedee6 100644
+--- a/tests/TestScripts/testRetryFailed.py
++++ b/tests/TestScripts/testRetryFailed.py
+@@ -11,6 +11,7 @@
+ 
+ import json
+ from pathlib import Path
++import re
+ import subprocess
+ import sys
+ import tempfile
+@@ -19,7 +20,6 @@ import xml.etree.ElementTree as ET
+ 
+ TEST_SPEC = "[.retry-zero]"
+ COMMON_ARGUMENTS = [
+-    TEST_SPEC,
+     "--order",
+     "lex",
+     "--rng-seed",
+@@ -29,15 +29,31 @@ COMMON_ARGUMENTS = [
+ ]
+ 
+ 
+-def run_reporter(test_exe, output_dir, reporter, suffix, retry_arguments=()):
+-    output_path = output_dir / "{}-{}.txt".format(reporter, suffix)
++def run_reporters(
++    test_exe,
++    output_dir,
++    reporters,
++    suffix,
++    retry_arguments=(),
++    test_spec=TEST_SPEC,
++    expected_returncode=0,
++    extra_arguments=(),
++):
++    output_paths = [
++        output_dir / "{}-{}-{}.txt".format(reporter, index, suffix)
++        for index, reporter in enumerate(reporters, 1)
++    ]
+     command = [
+         test_exe,
++        test_spec,
+         *COMMON_ARGUMENTS,
+         *retry_arguments,
+-        "--reporter",
+-        "{}::out={}".format(reporter, output_path),
++        *extra_arguments,
+     ]
++    for reporter, output_path in zip(reporters, output_paths):
++        command.extend(
++            ["--reporter", "{}::out={}".format(reporter, output_path)]
++        )
+     result = subprocess.run(
+         command,
+         stdout=subprocess.PIPE,
+@@ -46,14 +62,59 @@ def run_reporter(test_exe, output_dir, reporter, suffix, retry_arguments=()):
+         check=False,
+         universal_newlines=True,
+     )
+-    assert result.returncode == 0, (
+-        "Command failed with exit code {}:\n{}\nstdout:\n{}\nstderr:\n{}".format(
+-            result.returncode, command, result.stdout, result.stderr
++    assert result.returncode == expected_returncode, (
++        "Command returned {}, expected {}:\n{}\nstdout:\n{}\nstderr:\n{}".format(
++            result.returncode,
++            expected_returncode,
++            command,
++            result.stdout,
++            result.stderr,
+         )
+     )
+     assert result.stdout == "", "Unexpected stdout:\n{}".format(result.stdout)
+     assert result.stderr == "", "Unexpected stderr:\n{}".format(result.stderr)
+-    return output_path.read_text(encoding="utf-8")
++    return [path.read_text(encoding="utf-8") for path in output_paths]
++
++
++def run_reporter(
++    test_exe,
++    output_dir,
++    reporter,
++    suffix,
++    retry_arguments=(),
++    test_spec=TEST_SPEC,
++    expected_returncode=0,
++    extra_arguments=(),
++):
++    return run_reporters(
++        test_exe,
++        output_dir,
++        (reporter,),
++        suffix,
++        retry_arguments,
++        test_spec,
++        expected_returncode,
++        extra_arguments,
++    )[0]
++
++
++def run_retry_scenario(
++    test_exe,
++    output_dir,
++    suffix,
++    test_spec,
++    retries,
++    expected_returncode=0,
++):
++    return run_reporter(
++        test_exe,
++        output_dir,
++        "retry-recorder",
++        suffix,
++        ("--retry-failed", str(retries)),
++        test_spec,
++        expected_returncode,
++    )
+ 
+ 
+ def assert_recorder_baseline(output):
+@@ -96,6 +157,78 @@ def assert_no_json_attempt_keys(value):
+             assert_no_json_attempt_keys(child)
+ 
+ 
++def event_lines(output, prefix, test_name=None):
++    lines = [line for line in output.splitlines() if line.startswith(prefix)]
++    if test_name is not None:
++        marker = 'name="{}"'.format(test_name)
++        lines = [line for line in lines if marker in line]
++    return lines
++
++
++def assert_attempts(
++    output,
++    test_name,
++    attempt_numbers,
++    max_attempts,
++    flaky,
++    passed,
++):
++    starts = event_lines(output, "test-case-attempt-starting ", test_name)
++    ends = event_lines(output, "test-case-attempt-ended ", test_name)
++    expected = [(number, max_attempts) for number in attempt_numbers]
++
++    def numbers(line):
++        match = re.search(r" attempt=(\d+)/(\d+)", line)
++        assert match is not None, line
++        return tuple(int(value) for value in match.groups())
++
++    assert [numbers(line) for line in starts] == expected, output
++    assert [numbers(line) for line in ends] == expected, output
++    assert all(" final=false " in line for line in ends[:-1]), output
++    assert " final=true " in ends[-1], output
++
++    test_ends = event_lines(output, "test-case-ended ", test_name)
++    assert len(test_ends) == 1, output
++    final_line = test_ends[0]
++    assert "attempts={}/{} flaky={}".format(
++        attempt_numbers[-1], max_attempts, str(flaky).lower()
++    ) in final_line, final_line
++    expected_counts = (
++        "test-cases={passed=1,failed=0"
++        if passed
++        else "test-cases={passed=0,failed=1"
++    )
++    assert expected_counts in final_line, final_line
++
++
++def part_numbers(output, test_name):
++    result = []
++    for line in event_lines(
++        output, "test-case-partial-starting ", test_name
++    ):
++        match = re.search(r" part=(\d+)$", line)
++        assert match is not None, line
++        result.append(int(match.group(1)))
++    return result
++
++
++def attempt_outputs(output, test_name):
++    result = []
++    for line in event_lines(output, "test-case-attempt-ended ", test_name):
++        match = re.search(r' out="((?:\\.|[^"\\])*)" err=', line)
++        assert match is not None, line
++        result.append(json.loads('"{}"'.format(match.group(1))))
++    return result
++
++
++def assert_repeated_traversal(output, test_name, expected_parts):
++    assert part_numbers(output, test_name) == list(range(expected_parts * 2)), output
++    outputs = attempt_outputs(output, test_name)
++    assert len(outputs) == 2, output
++    normalized = [re.sub(r"attempt=\d+", "attempt=#", value) for value in outputs]
++    assert normalized[0] == normalized[1], outputs
++
++
+ def main():
+     test_exe, = sys.argv[1:]
+ 
+@@ -143,6 +276,264 @@ def main():
+             "listener=1,2,3,3,2,1\n"
+         ), legacy_output
+ 
++        immediate = run_retry_scenario(
++            test_exe,
++            output_dir,
++            "immediate",
++            "[.retry-immediate]",
++            2,
++        )
++        assert_attempts(
++            immediate, "retry immediate pass", [1], 3, False, True
++        )
++
++        fail_once = run_retry_scenario(
++            test_exe,
++            output_dir,
++            "fail-once",
++            "[.retry-fail-once]",
++            2,
++        )
++        assert_attempts(fail_once, "retry fail once", [1, 2], 3, True, True)
++        fail_once_ends = event_lines(
++            fail_once, "test-case-attempt-ended ", "retry fail once"
++        )
++        assert "assertions={passed=0,failed=1" in fail_once_ends[0]
++        assert 'out="fail-once-out execution=1\\n"' in fail_once_ends[0]
++        assert 'err="fail-once-err execution=1\\n"' in fail_once_ends[0]
++        assert any(
++            "ok=false" in line
++            and 'info="fail-once-info execution=1"' in line
++            for line in event_lines(fail_once, "assertion-ended ")
++        ), fail_once
++        fail_once_final = event_lines(
++            fail_once, "test-case-ended ", "retry fail once"
++        )[0]
++        assert "fail-once-out execution=1\\nfail-once-out execution=2\\n" in fail_once_final
++        assert "fail-once-err execution=1\\nfail-once-err execution=2\\n" in fail_once_final
++
++        fail_twice = run_retry_scenario(
++            test_exe,
++            output_dir,
++            "fail-twice",
++            "[.retry-fail-twice]",
++            2,
++        )
++        assert_attempts(
++            fail_twice, "retry fail twice", [1, 2, 3], 3, True, True
++        )
++
++        always_fails = run_retry_scenario(
++            test_exe,
++            output_dir,
++            "always-fails",
++            "[.retry-always-fails]",
++            2,
++            42,
++        )
++        assert_attempts(
++            always_fails,
++            "retry always fails",
++            [1, 2, 3],
++            3,
++            False,
++            False,
++        )
++
++        exhausted_early = run_retry_scenario(
++            test_exe,
++            output_dir,
++            "exhausted-early",
++            "[.retry-fail-twice]",
++            1,
++            42,
++        )
++        assert_attempts(
++            exhausted_early,
++            "retry fail twice",
++            [1, 2],
++            2,
++            False,
++            False,
++        )
++
++        independent = run_retry_scenario(
++            test_exe,
++            output_dir,
++            "independent",
++            "[.retry-independent]",
++            2,
++        )
++        assert_attempts(
++            independent, "retry independent X", [1, 2], 3, True, True
++        )
++        assert_attempts(
++            independent, "retry independent Y", [1, 2, 3], 3, True, True
++        )
++
++        mixed = run_retry_scenario(
++            test_exe,
++            output_dir,
++            "mixed",
++            "[.retry-mixed]",
++            2,
++            42,
++        )
++        assert_attempts(
++            mixed, "retry immediate pass", [1], 3, False, True
++        )
++        assert_attempts(mixed, "retry fail once", [1, 2], 3, True, True)
++        assert_attempts(
++            mixed,
++            "retry always fails",
++            [1, 2, 3],
++            3,
++            False,
++            False,
++        )
++        mixed_run_end = event_lines(mixed, "test-run-ended ")
++        assert mixed_run_end == [
++            "test-run-ended "
++            "assertions={passed=2,failed=1,failed-but-ok=0,skipped=0} "
++            "test-cases={passed=2,failed=1,failed-but-ok=0,skipped=0} "
++            "aborting=false"
++        ], mixed
++
++        simple_section = run_retry_scenario(
++            test_exe,
++            output_dir,
++            "simple-section",
++            "[.retry-simple-section]",
++            2,
++        )
++        assert_attempts(
++            simple_section, "retry simple section", [1, 2], 3, True, True
++        )
++        assert_repeated_traversal(simple_section, "retry simple section", 1)
++
++        nested_sections = run_retry_scenario(
++            test_exe,
++            output_dir,
++            "nested-sections",
++            "[.retry-nested-sections]",
++            2,
++        )
++        assert_attempts(
++            nested_sections, "retry nested sections", [1, 2], 3, True, True
++        )
++        assert_repeated_traversal(
++            nested_sections, "retry nested sections", 3
++        )
++
++        generator = run_retry_scenario(
++            test_exe,
++            output_dir,
++            "generator",
++            "[.retry-generator]",
++            2,
++        )
++        assert_attempts(generator, "retry generator", [1, 2], 3, True, True)
++        assert_repeated_traversal(generator, "retry generator", 3)
++
++        generator_sections = run_retry_scenario(
++            test_exe,
++            output_dir,
++            "generator-sections",
++            "[.retry-generator-sections]",
++            2,
++        )
++        assert_attempts(
++            generator_sections,
++            "retry generator with sections",
++            [1, 2],
++            3,
++            True,
++            True,
++        )
++        assert_repeated_traversal(
++            generator_sections, "retry generator with sections", 4
++        )
++
++        fixtures = run_retry_scenario(
++            test_exe,
++            output_dir,
++            "fixtures",
++            "[.retry-fixtures]",
++            2,
++        )
++        assert_attempts(
++            fixtures,
++            "retry fixture 1 persistent exercise",
++            [1, 2],
++            3,
++            True,
++            True,
++        )
++        assert_attempts(
++            fixtures,
++            "retry fixture 2 per-run exercise",
++            [1, 2],
++            3,
++            True,
++            True,
++        )
++        assert_attempts(
++            fixtures,
++            "retry fixture 3 lifecycle audit",
++            [1],
++            3,
++            False,
++            True,
++        )
++
++        random_first = run_retry_scenario(
++            test_exe,
++            output_dir,
++            "random-first",
++            "[.retry-random]",
++            2,
++        )
++        random_second = run_retry_scenario(
++            test_exe,
++            output_dir,
++            "random-second",
++            "[.retry-random]",
++            2,
++        )
++        assert random_first == random_second
++        assert_attempts(
++            random_first, "retry random generator", [1, 2], 3, True, True
++        )
++        random_outputs = attempt_outputs(
++            random_first, "retry random generator"
++        )
++        assert random_outputs[0] == random_outputs[1], random_outputs
++
++        legacy_retry = run_reporter(
++            test_exe,
++            output_dir,
++            "legacy-reporter",
++            "legacy-retry",
++            ("--retry-failed", "2"),
++            "[.retry-fail-once]",
++        )
++        assert legacy_retry == (
++            "legacy-reporter reporter=1,1,2,2,1,1 "
++            "listener=1,1,2,2,1,1\n"
++        ), legacy_retry
++
++        multi_outputs = run_reporters(
++            test_exe,
++            output_dir,
++            ("retry-recorder", "retry-recorder-2"),
++            "multi-reporter",
++            ("--retry-failed", "2"),
++            "[.retry-fail-once]",
++        )
++        assert multi_outputs[0] == multi_outputs[1]
++        assert "listener-starts=1 listener-ends=0" in multi_outputs[0]
++        assert "listener-starts=1 listener-ends=1" in multi_outputs[0]
++
+ 
+ if __name__ == "__main__":
+     sys.exit(main())
+-- 
+2.56.0.windows.1
+
