@@ -160,7 +160,7 @@ Update this table as work progresses. A phase is complete only after its gate pa
 | 4. Create and review the technical plan | `artifacts/05-plan.md`, `07-decisions.md` | Complete — approved |
 | 5. Decompose into verifiable tasks | `artifacts/06-tasks.md` | Complete — approved |
 | 6. Implement in small tested slices | Catch2 commits and task evidence | Complete — T00–T14 done (see `artifacts/06-tasks.md`) |
-| 7. Review with fresh context | `artifacts/08-review.md` | Not started |
+| 7. Review with fresh context | `artifacts/08-review.md` | In progress — H-1 and M-1 reporter findings open |
 | 8. Run full validation and convergence | `artifacts/09-validation.md` | Not started |
 | 9. Prepare the handoff and reflect | patch, implementation notes, `10-retrospective.md` | Not started |
 
