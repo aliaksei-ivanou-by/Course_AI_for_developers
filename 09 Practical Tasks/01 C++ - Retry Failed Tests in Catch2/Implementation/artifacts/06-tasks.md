@@ -8,10 +8,10 @@ This is the single authoritative task list for Phase 6. Tasks are ordered by dep
 ## Working Model
 
 - **Where code is written.** Each task is developed and first tested in a scratch clone of the same commit (`317ac1ed…`, branch `task/retry-failed`) in the agent's workspace, built with CMake and GCC on Linux for fast feedback. Only the changed files are then copied into `workspace/Catch2` on the reviewer's machine; nothing else in the checkout is touched.
-- **Authoritative validation.** The Windows toolchain recorded in [01-baseline.md](01-baseline.md) is authoritative. After the files are copied, the reviewer runs `scripts/phase6-validate.ps1` (task T00) for the task; its summary goes to `evidence/raw/phase6/<task>/` and the agent records the result under the task below.
+- **Authoritative validation.** The Windows toolchain recorded in [01-baseline.md](01-baseline.md) is authoritative. After the files are copied, the reviewer runs `scripts/phase6-validate.ps1` (task T00) for the task; its summary goes to `evidence/raw/phase6/<task>-run-NN-<preset>/` and the agent records the result under the task below.
 - **Commits.** After a task passes on Windows, the reviewer creates one local commit in `workspace/Catch2` with the message the agent provides; the agent cannot run Git on the reviewer's machine. No push.
 - **Warnings are errors.** The presets enable `CATCH_DEVELOPMENT_BUILD`, which turns on `-Werror` (GCC) and `/WX` (MSVC) (`CMakeLists.txt:15-25`, `CMake/CatchMiscFunctions.cmake:31-33`), so every task must compile warning-free with both compilers; code is never added before the task that uses it.
-- **Evidence format.** Each task's evidence line records: the Linux focused and regression results, the Windows summary path under `evidence/raw/phase6/<task>/` with its result, and the commit hash in `workspace/Catch2`.
+- **Evidence format.** Each task's evidence line records: the Linux focused and regression results, the Windows summary path under `evidence/raw/phase6/<task>-run-NN-<preset>/` with its result, and the commit hash in `workspace/Catch2`.
 - **Done means:** focused tests pass on Linux and Windows, the nearest regression set passes on Windows, the diff contains only the task's files, and the evidence line is filled in.
 
 ## Dependency Graph
@@ -32,13 +32,13 @@ There is no cycle. T00, T01, and T02 touch disjoint files and can be done in any
 
 ## Tasks
 
-### [ ] T00 — Phase 6 validation script
+### [x] T00 — Phase 6 validation script
 
 - **Outcome:** one command builds a chosen preset — `basic-tests` into `C:\build\Course_AI\catch2\basic-test-build` or `all-tests` into `C:\build\Course_AI\catch2\debug-build` (needed for the extra tests, which only the larger presets build) — runs CTest with an optional `-R` filter followed by the full suite of that preset, checks `git status`, and writes a summary per task. It does not regenerate the amalgamated files, so they stay unchanged until T13.
 - **Files:** `Implementation/scripts/phase6-validate.ps1` (course repository, not Catch2).
 - **Depends on:** none.
-- **Focused test:** run it on the unmodified branch for both presets: 82/82 and 145/145 tests, clean tree, summaries written to `evidence/raw/phase6/T00/`.
-- **Evidence:** _pending_ (format: see Working Model)
+- **Focused test:** run it on the unmodified branch for both presets: 82/82 and 145/145 tests, clean tree, summaries written to `evidence/raw/phase6/T00-run-NN-<preset>/`.
+- **Evidence:** Linux smoke test of the script logic (`basic`, with and without a filter, scratch build root): configure and build exit 0, 0 warnings, focused 1/1 and full 81/81 passed (the Linux suite has 81 tests; the Windows suite has 82), clean tree. A first Windows run wrote its evidence one folder deeper than the review tooling can read (8 levels below the connected folder, limit 7), so the evidence layout was flattened to `evidence/raw/phase6/<task>-run-NN-<preset>/` and the Windows runs were repeated. Windows `T00-run-01-basic`: HEAD `317ac1ed…` on `task/retry-failed`, clean tree; configure and build exit 0 (no recompilation); **82/82 passed** (19.4 s); no `*.unapproved.txt`; clean after the run. Windows `T00-run-02-all`: same repository state; **145/145 passed** (12.2 s; 16 `uses-python`, 1 `uses-signals`); clean after the run. Both match baseline runs 5 and 6. Observations: an incremental build reports warnings only for recompiled files (run 6 had 4 `D9025` on a full build), and the CMake configuration tests reuse their own earlier builds (about 1.8 s each instead of about 100 s), so T13 must use fresh build directories. No Catch2 commit: T00 changes only the course repository.
 - **Independent:** yes.
 
 ### [ ] T01 — `--retry-failed` option and configuration
@@ -178,7 +178,7 @@ There is no cycle. T00, T01, and T02 touch disjoint files and can be done in any
 - **Outcome:** tracked amalgamated files are regenerated, and the complete suites pass on Windows.
 - **Files:** `extras/catch_amalgamated.hpp`, `extras/catch_amalgamated.cpp`.
 - **Depends on:** T12.
-- **Focused tests:** `python tools/scripts/generateAmalgamatedFiles.py`; diff limited to source changes and the `Generated:` line; `all-tests` preset build and CTest (amalgamated build test included); `basic-tests`; approval tests with no unintended baseline change.
+- **Focused tests:** `python tools/scripts/generateAmalgamatedFiles.py`; diff limited to source changes and the `Generated:` line; `all-tests` preset build and CTest in **fresh** build directories (incremental builds hide warnings of unchanged files and let the CMake configuration tests reuse earlier builds, see T00) (amalgamated build test included); `basic-tests`; approval tests with no unintended baseline change.
 - **Covers:** CO-1 (final confirmation), generated-file deliverable.
 - **Regression:** everything; results compared with baseline runs 5 (82/82) and 6 (145/145).
 - **Evidence:** _pending_ (format: see Working Model)
