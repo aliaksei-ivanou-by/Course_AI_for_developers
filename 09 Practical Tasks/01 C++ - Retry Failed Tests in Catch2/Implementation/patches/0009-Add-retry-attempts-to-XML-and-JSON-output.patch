@@ -1,0 +1,447 @@
+From 553df1685fe2b68d8933478ce81de645dff94ae0 Mon Sep 17 00:00:00 2001
+From: Aliaksei Ivanou <aliaksei.ivanou@innowise.com>
+Date: Sun, 4 Oct 2026 20:01:20 +0200
+Subject: [PATCH] Add retry attempts to XML and JSON output
+
+---
+ src/catch2/reporters/catch_reporter_json.cpp |  38 +++
+ src/catch2/reporters/catch_reporter_json.hpp |  14 ++
+ src/catch2/reporters/catch_reporter_xml.cpp  |  24 ++
+ src/catch2/reporters/catch_reporter_xml.hpp  |   6 +
+ tests/TestScripts/testRetryFailed.py         | 234 +++++++++++++++++++
+ 5 files changed, 316 insertions(+)
+
+diff --git a/src/catch2/reporters/catch_reporter_json.cpp b/src/catch2/reporters/catch_reporter_json.cpp
+index 39a2105d..d8f33d4b 100644
+--- a/src/catch2/reporters/catch_reporter_json.cpp
++++ b/src/catch2/reporters/catch_reporter_json.cpp
+@@ -173,6 +173,9 @@ namespace Catch {
+ 
+     void JsonReporter::testCaseStarting( TestCaseInfo const& tcInfo ) {
+         StreamingReporterBase::testCaseStarting( tcInfo );
++        m_attemptNumber = 0;
++        m_maxAttempts = 1;
++        m_attemptResults.clear();
+ 
+         assert( isInside( Writer::Array ) &&
+                 "We should be in the 'test-cases' array" );
+@@ -194,6 +197,19 @@ namespace Catch {
+         startArray( "runs"_sr );
+     }
+ 
++    void JsonReporter::testCaseAttemptStarting(
++        TestCaseAttemptInfo const& attemptInfo ) {
++        m_attemptNumber = attemptInfo.attemptNumber;
++        m_maxAttempts = attemptInfo.maxAttempts;
++    }
++
++    void JsonReporter::testCaseAttemptEnded(
++        TestCaseAttemptStats const& attemptStats ) {
++        m_attemptResults.push_back( { attemptStats.attemptNumber,
++                                      attemptStats.isFinal,
++                                      attemptStats.totals.assertions } );
++    }
++
+     void JsonReporter::testCaseEnded( TestCaseStats const& tcStats ) {
+         StreamingReporterBase::testCaseEnded( tcStats );
+ 
+@@ -209,6 +225,23 @@ namespace Catch {
+             // We do not write the test case totals, because there will always be just one test case here.
+             // TODO: overall "result" -> success, skip, fail here? Or in partial result?
+         }
++        if ( tcStats.maxAttempts > 1 ) {
++            auto attempts =
++                m_objectWriters.top().write( "attempts"_sr ).writeObject();
++            attempts.write( "used"_sr ).write( tcStats.attemptCount );
++            attempts.write( "max"_sr ).write( tcStats.maxAttempts );
++            attempts.write( "flaky"_sr ).write( tcStats.isFlaky );
++            auto results = attempts.write( "results"_sr ).writeArray();
++            for ( auto const& attemptResult : m_attemptResults ) {
++                auto result = results.writeObject();
++                result.write( "attempt"_sr )
++                    .write( attemptResult.attemptNumber );
++                result.write( "final"_sr ).write( attemptResult.isFinal );
++                auto totals = result.write( "totals"_sr ).writeObject();
++                writeCounts( totals.write( "assertions"_sr ).writeObject(),
++                             attemptResult.assertions );
++            }
++        }
+         // We do not write out stderr/stdout, because we instead wrote those out in partial runs
+ 
+         // TODO: aborting?
+@@ -222,6 +255,11 @@ namespace Catch {
+                                                 uint64_t index ) {
+         startObject();
+         m_objectWriters.top().write( "run-idx"_sr ).write( index );
++        if ( m_maxAttempts > 1 ) {
++            m_objectWriters.top()
++                .write( "attempt"_sr )
++                .write( m_attemptNumber );
++        }
+         startArray( "path"_sr );
+         // TODO: we want to delay most of the printing to the 'root' section
+         // TODO: childSection key name?
+diff --git a/src/catch2/reporters/catch_reporter_json.hpp b/src/catch2/reporters/catch_reporter_json.hpp
+index 6de1bd77..2e7542b8 100644
+--- a/src/catch2/reporters/catch_reporter_json.hpp
++++ b/src/catch2/reporters/catch_reporter_json.hpp
+@@ -14,6 +14,7 @@
+ #include <catch2/reporters/catch_reporter_streaming_base.hpp>
+ 
+ #include <stack>
++#include <vector>
+ 
+ namespace Catch {
+     class JsonReporter : public StreamingReporterBase {
+@@ -29,6 +30,10 @@ namespace Catch {
+         void testRunEnded( TestRunStats const& runStats ) override;
+ 
+         void testCaseStarting( TestCaseInfo const& tcInfo ) override;
++        void testCaseAttemptStarting(
++            TestCaseAttemptInfo const& attemptInfo ) override;
++        void testCaseAttemptEnded(
++            TestCaseAttemptStats const& attemptStats ) override;
+         void testCaseEnded( TestCaseStats const& tcStats ) override;
+ 
+         void testCasePartialStarting( TestCaseInfo const& tcInfo,
+@@ -85,6 +90,15 @@ namespace Catch {
+         std::stack<Writer> m_writers{};
+ 
+         bool m_startedListing = false;
++
++        struct AttemptResult {
++            std::uint64_t attemptNumber;
++            bool isFinal;
++            Counts assertions;
++        };
++        std::uint64_t m_attemptNumber = 0;
++        std::uint64_t m_maxAttempts = 1;
++        std::vector<AttemptResult> m_attemptResults;
+     };
+ } // namespace Catch
+ 
+diff --git a/src/catch2/reporters/catch_reporter_xml.cpp b/src/catch2/reporters/catch_reporter_xml.cpp
+index 8b7b5a70..a605e1a4 100644
+--- a/src/catch2/reporters/catch_reporter_xml.cpp
++++ b/src/catch2/reporters/catch_reporter_xml.cpp
+@@ -77,6 +77,14 @@ namespace Catch {
+         m_xml.ensureTagClosed();
+     }
+ 
++    void XmlReporter::testCaseAttemptStarting(
++        TestCaseAttemptInfo const& attemptInfo ) {
++        m_xml.startElement( "Attempt" )
++            .writeAttribute( "number"_sr, attemptInfo.attemptNumber )
++            .writeAttribute( "maxAttempts"_sr, attemptInfo.maxAttempts );
++        m_xml.ensureTagClosed();
++    }
++
+     void XmlReporter::sectionStarting( SectionInfo const& sectionInfo ) {
+         StreamingReporterBase::sectionStarting( sectionInfo );
+         if( m_sectionDepth++ > 0 ) {
+@@ -187,11 +195,27 @@ namespace Catch {
+         }
+     }
+ 
++    void XmlReporter::testCaseAttemptEnded(
++        TestCaseAttemptStats const& attemptStats ) {
++        m_xml.scopedElement( "AttemptResult" )
++            .writeAttribute( "success"_sr,
++                             attemptStats.totals.assertions.allOk() )
++            .writeAttribute( "skips"_sr,
++                             attemptStats.totals.assertions.skipped )
++            .writeAttribute( "final"_sr, attemptStats.isFinal );
++        m_xml.endElement();
++    }
++
+     void XmlReporter::testCaseEnded( TestCaseStats const& testCaseStats ) {
+         StreamingReporterBase::testCaseEnded( testCaseStats );
+         XmlWriter::ScopedElement e = m_xml.scopedElement( "OverallResult" );
+         e.writeAttribute( "success"_sr, testCaseStats.totals.assertions.allOk() );
+         e.writeAttribute( "skips"_sr, testCaseStats.totals.assertions.skipped );
++        if ( testCaseStats.maxAttempts > 1 ) {
++            e.writeAttribute( "attempts"_sr, testCaseStats.attemptCount );
++            e.writeAttribute( "maxAttempts"_sr, testCaseStats.maxAttempts );
++            e.writeAttribute( "flaky"_sr, testCaseStats.isFlaky );
++        }
+ 
+         if ( m_config->showDurations() == ShowDurations::Always )
+             e.writeAttribute( "durationInSeconds"_sr, m_testCaseTimer.getElapsedSeconds() );
+diff --git a/src/catch2/reporters/catch_reporter_xml.hpp b/src/catch2/reporters/catch_reporter_xml.hpp
+index 66f95a8e..4305aa3b 100644
+--- a/src/catch2/reporters/catch_reporter_xml.hpp
++++ b/src/catch2/reporters/catch_reporter_xml.hpp
+@@ -33,12 +33,18 @@ namespace Catch {
+ 
+         void testCaseStarting(TestCaseInfo const& testInfo) override;
+ 
++        void testCaseAttemptStarting(
++            TestCaseAttemptInfo const& attemptInfo ) override;
++
+         void sectionStarting(SectionInfo const& sectionInfo) override;
+ 
+         void assertionEnded(AssertionStats const& assertionStats) override;
+ 
+         void sectionEnded(SectionStats const& sectionStats) override;
+ 
++        void testCaseAttemptEnded(
++            TestCaseAttemptStats const& attemptStats ) override;
++
+         void testCaseEnded(TestCaseStats const& testCaseStats) override;
+ 
+         void testRunEnded(TestRunStats const& testRunStats) override;
+diff --git a/tests/TestScripts/testRetryFailed.py b/tests/TestScripts/testRetryFailed.py
+index e8d53216..731c738e 100644
+--- a/tests/TestScripts/testRetryFailed.py
++++ b/tests/TestScripts/testRetryFailed.py
+@@ -165,6 +165,32 @@ def assert_no_json_attempt_keys(value):
+             assert_no_json_attempt_keys(child)
+ 
+ 
++def only_xml_test_case(output):
++    root = ET.fromstring(output)
++    assert root.tag == "Catch2TestRun", output
++    assert root.get("xml-format-version") == "3", output
++    test_cases = root.findall("./TestCase")
++    assert len(test_cases) == 1, output
++    return root, test_cases[0]
++
++
++def only_json_test_case(output):
++    document = json.loads(output)
++    assert document["version"] == 2, output
++    test_cases = document["test-run"]["test-cases"]
++    assert len(test_cases) == 1, output
++    return document, test_cases[0]
++
++
++def assertion_counts(passed, failed, failed_but_ok=0, skipped=0):
++    return {
++        "passed": passed,
++        "failed": failed,
++        "fail-but-ok": failed_but_ok,
++        "skipped": skipped,
++    }
++
++
+ def event_lines(output, prefix, test_name=None):
+     lines = [line for line in output.splitlines() if line.startswith(prefix)]
+     if test_name is not None:
+@@ -955,6 +981,214 @@ def main():
+             assert "test cases: 1 | 1 failed" in human_exhausted
+             assert "assertions: 1 | 1 failed" in human_exhausted
+ 
++        xml_immediate = run_reporter(
++            test_exe,
++            output_dir,
++            "xml",
++            "xml-immediate-attempt",
++            ("--retry-failed", "2"),
++            "[.retry-immediate]",
++        )
++        xml_immediate_root, xml_immediate_case = only_xml_test_case(
++            xml_immediate
++        )
++        xml_immediate_attempts = xml_immediate_case.findall("./Attempt")
++        assert len(xml_immediate_attempts) == 1, xml_immediate
++        assert xml_immediate_attempts[0].attrib == {
++            "number": "1",
++            "maxAttempts": "3",
++        }, xml_immediate
++        assert xml_immediate_attempts[0].find("./AttemptResult").attrib == {
++            "success": "true",
++            "skips": "0",
++            "final": "true",
++        }, xml_immediate
++        assert xml_immediate_case.find("./OverallResult").attrib == {
++            "success": "true",
++            "skips": "0",
++            "attempts": "1",
++            "maxAttempts": "3",
++            "flaky": "false",
++        }, xml_immediate
++        assert xml_immediate_root.find("./OverallResults").attrib == {
++            "successes": "1",
++            "failures": "0",
++            "expectedFailures": "0",
++            "skips": "0",
++        }, xml_immediate
++
++        xml_flaky = run_reporter(
++            test_exe,
++            output_dir,
++            "xml",
++            "xml-flaky-attempts",
++            ("--retry-failed", "2"),
++            "[.retry-fail-once]",
++            extra_arguments=("-s",),
++        )
++        _, xml_flaky_case = only_xml_test_case(xml_flaky)
++        xml_flaky_attempts = xml_flaky_case.findall("./Attempt")
++        assert [attempt.attrib for attempt in xml_flaky_attempts] == [
++            {"number": "1", "maxAttempts": "3"},
++            {"number": "2", "maxAttempts": "3"},
++        ], xml_flaky
++        assert [
++            attempt.find("./AttemptResult").attrib
++            for attempt in xml_flaky_attempts
++        ] == [
++            {"success": "false", "skips": "0", "final": "false"},
++            {"success": "true", "skips": "0", "final": "true"},
++        ], xml_flaky
++        assert [
++            expression.get("success")
++            for attempt in xml_flaky_attempts
++            for expression in attempt.findall("./Expression")
++        ] == ["false", "true"], xml_flaky
++        xml_flaky_overall = xml_flaky_case.find("./OverallResult")
++        assert xml_flaky_overall.get("success") == "true", xml_flaky
++        assert xml_flaky_overall.get("attempts") == "2", xml_flaky
++        assert xml_flaky_overall.get("maxAttempts") == "3", xml_flaky
++        assert xml_flaky_overall.get("flaky") == "true", xml_flaky
++
++        xml_exhausted = run_reporter(
++            test_exe,
++            output_dir,
++            "xml",
++            "xml-exhausted-attempts",
++            ("--retry-failed", "2"),
++            "[.retry-always-fails]",
++            42,
++        )
++        xml_exhausted_root, xml_exhausted_case = only_xml_test_case(
++            xml_exhausted
++        )
++        xml_exhausted_attempts = xml_exhausted_case.findall("./Attempt")
++        assert [attempt.get("number") for attempt in xml_exhausted_attempts] == [
++            "1",
++            "2",
++            "3",
++        ], xml_exhausted
++        assert [
++            attempt.find("./AttemptResult").get("final")
++            for attempt in xml_exhausted_attempts
++        ] == ["false", "false", "true"], xml_exhausted
++        assert all(
++            attempt.find("./AttemptResult").get("success") == "false"
++            for attempt in xml_exhausted_attempts
++        ), xml_exhausted
++        xml_exhausted_overall = xml_exhausted_case.find("./OverallResult")
++        assert xml_exhausted_overall.get("success") == "false", xml_exhausted
++        assert xml_exhausted_overall.get("attempts") == "3", xml_exhausted
++        assert xml_exhausted_overall.get("maxAttempts") == "3", xml_exhausted
++        assert xml_exhausted_overall.get("flaky") == "false", xml_exhausted
++        assert xml_exhausted_root.find("./OverallResults").attrib == {
++            "successes": "0",
++            "failures": "1",
++            "expectedFailures": "0",
++            "skips": "0",
++        }, xml_exhausted
++
++        json_immediate = run_reporter(
++            test_exe,
++            output_dir,
++            "json",
++            "json-immediate-attempt",
++            ("--retry-failed", "2"),
++            "[.retry-immediate]",
++        )
++        json_immediate_document, json_immediate_case = only_json_test_case(
++            json_immediate
++        )
++        assert [run["attempt"] for run in json_immediate_case["runs"]] == [1]
++        assert json_immediate_case["attempts"] == {
++            "used": 1,
++            "max": 3,
++            "flaky": False,
++            "results": [
++                {
++                    "attempt": 1,
++                    "final": True,
++                    "totals": {"assertions": assertion_counts(1, 0)},
++                }
++            ],
++        }, json_immediate
++        assert json_immediate_document["test-run"]["totals"] == {
++            "assertions": assertion_counts(1, 0),
++            "test-cases": assertion_counts(1, 0),
++        }, json_immediate
++
++        json_flaky = run_reporter(
++            test_exe,
++            output_dir,
++            "json",
++            "json-flaky-attempts",
++            ("--retry-failed", "2"),
++            "[.retry-fail-once]",
++        )
++        json_flaky_document, json_flaky_case = only_json_test_case(json_flaky)
++        assert [run["attempt"] for run in json_flaky_case["runs"]] == [1, 2]
++        assert json_flaky_case["attempts"] == {
++            "used": 2,
++            "max": 3,
++            "flaky": True,
++            "results": [
++                {
++                    "attempt": 1,
++                    "final": False,
++                    "totals": {"assertions": assertion_counts(0, 1)},
++                },
++                {
++                    "attempt": 2,
++                    "final": True,
++                    "totals": {"assertions": assertion_counts(1, 0)},
++                },
++            ],
++        }, json_flaky
++        assert json_flaky_case["totals"]["assertions"] == assertion_counts(
++            1, 0
++        ), json_flaky
++        assert json_flaky_document["test-run"]["totals"][
++            "test-cases"
++        ] == assertion_counts(1, 0), json_flaky
++
++        json_exhausted = run_reporter(
++            test_exe,
++            output_dir,
++            "json",
++            "json-exhausted-attempts",
++            ("--retry-failed", "2"),
++            "[.retry-always-fails]",
++            42,
++        )
++        json_exhausted_document, json_exhausted_case = only_json_test_case(
++            json_exhausted
++        )
++        assert [run["attempt"] for run in json_exhausted_case["runs"]] == [
++            1,
++            2,
++            3,
++        ], json_exhausted
++        assert json_exhausted_case["attempts"] == {
++            "used": 3,
++            "max": 3,
++            "flaky": False,
++            "results": [
++                {
++                    "attempt": attempt,
++                    "final": attempt == 3,
++                    "totals": {"assertions": assertion_counts(0, 1)},
++                }
++                for attempt in (1, 2, 3)
++            ],
++        }, json_exhausted
++        assert json_exhausted_case["totals"]["assertions"] == assertion_counts(
++            0, 1
++        ), json_exhausted
++        assert json_exhausted_document["test-run"]["totals"] == {
++            "assertions": assertion_counts(0, 1),
++            "test-cases": assertion_counts(0, 1),
++        }, json_exhausted
++
+         automake_flaky = run_reporters(
+             test_exe,
+             output_dir,
+-- 
+2.56.0.windows.1
+
