@@ -1,0 +1,281 @@
+From f2c479c008cb565c08ead4b0e85d0874f28eb82c Mon Sep 17 00:00:00 2001
+From: Aliaksei Ivanou <aliaksei.ivanou@innowise.com>
+Date: Sun, 4 Oct 2026 19:53:06 +0200
+Subject: [PATCH] Report retries in console and compact output
+
+---
+ .../reporters/catch_reporter_compact.cpp      | 43 ++++++++++
+ .../reporters/catch_reporter_compact.hpp      |  9 +++
+ .../reporters/catch_reporter_console.cpp      | 40 +++++++++-
+ .../reporters/catch_reporter_console.hpp      |  6 ++
+ tests/TestScripts/testRetryFailed.py          | 78 +++++++++++++++++++
+ 5 files changed, 175 insertions(+), 1 deletion(-)
+
+diff --git a/src/catch2/reporters/catch_reporter_compact.cpp b/src/catch2/reporters/catch_reporter_compact.cpp
+index 6d2c8655..56da5e0f 100644
+--- a/src/catch2/reporters/catch_reporter_compact.cpp
++++ b/src/catch2/reporters/catch_reporter_compact.cpp
+@@ -9,6 +9,7 @@
+ 
+ #include <catch2/catch_get_random_seed.hpp>
+ #include <catch2/catch_test_spec.hpp>
++#include <catch2/catch_test_case_info.hpp>
+ #include <catch2/reporters/catch_reporter_helpers.hpp>
+ #include <catch2/interfaces/catch_interfaces_config.hpp>
+ #include <catch2/internal/catch_platform.hpp>
+@@ -233,6 +234,10 @@ private:
+ 
+             AssertionPrinter printer( m_stream, _assertionStats, printInfoMessages, m_colour.get() );
+             printer.print();
++            if ( !result.isOk() && m_attemptNumber > 1 ) {
++                m_stream << " (attempt " << m_attemptNumber << " of "
++                         << m_maxAttempts << ')';
++            }
+ 
+             m_stream << '\n' << std::flush;
+         }
+@@ -244,6 +249,44 @@ private:
+             }
+         }
+ 
++        void CompactReporter::testCaseAttemptStarting(
++            TestCaseAttemptInfo const& attemptInfo ) {
++            m_attemptNumber = attemptInfo.attemptNumber;
++            m_maxAttempts = attemptInfo.maxAttempts;
++        }
++
++        void CompactReporter::testCaseAttemptEnded(
++            TestCaseAttemptStats const& attemptStats ) {
++            if ( !attemptStats.isFinal ) {
++                m_stream << "Attempt " << attemptStats.attemptNumber << " of "
++                         << attemptStats.maxAttempts
++                         << " failed; retrying test case '"
++                         << attemptStats.testInfo->name << "'\n"
++                         << std::flush;
++            }
++        }
++
++        void CompactReporter::testCaseEnded(
++            TestCaseStats const& testCaseStats ) {
++            if ( testCaseStats.attemptCount > 1 ) {
++                m_stream << "Test case '" << testCaseStats.testInfo->name
++                         << "' ";
++                if ( testCaseStats.isFlaky ) {
++                    m_stream << "passed on attempt "
++                             << testCaseStats.attemptCount << " of "
++                             << testCaseStats.maxAttempts << " (flaky)\n";
++                } else {
++                    m_stream << "failed after " << testCaseStats.attemptCount
++                             << " of " << testCaseStats.maxAttempts
++                             << " attempts\n";
++                }
++                m_stream << std::flush;
++            }
++            StreamingReporterBase::testCaseEnded( testCaseStats );
++            m_attemptNumber = 0;
++            m_maxAttempts = 0;
++        }
++
+         void CompactReporter::testRunEnded( TestRunStats const& _testRunStats ) {
+             printTestRunTotals( m_stream, *m_colour, _testRunStats.totals );
+             m_stream << "\n\n" << std::flush;
+diff --git a/src/catch2/reporters/catch_reporter_compact.hpp b/src/catch2/reporters/catch_reporter_compact.hpp
+index a6437c68..34b3f2a7 100644
+--- a/src/catch2/reporters/catch_reporter_compact.hpp
++++ b/src/catch2/reporters/catch_reporter_compact.hpp
+@@ -33,8 +33,17 @@ namespace Catch {
+ 
+         void sectionEnded(SectionStats const& _sectionStats) override;
+ 
++        void testCaseAttemptStarting(
++            TestCaseAttemptInfo const& attemptInfo ) override;
++        void testCaseAttemptEnded(
++            TestCaseAttemptStats const& attemptStats ) override;
++        void testCaseEnded( TestCaseStats const& testCaseStats ) override;
++
+         void testRunEnded(TestRunStats const& _testRunStats) override;
+ 
++    private:
++        std::uint64_t m_attemptNumber = 0;
++        std::uint64_t m_maxAttempts = 0;
+     };
+ 
+ } // end namespace Catch
+diff --git a/src/catch2/reporters/catch_reporter_console.cpp b/src/catch2/reporters/catch_reporter_console.cpp
+index acb4ae8e..120747e8 100644
+--- a/src/catch2/reporters/catch_reporter_console.cpp
++++ b/src/catch2/reporters/catch_reporter_console.cpp
+@@ -513,10 +513,42 @@ void ConsoleReporter::benchmarkFailed( StringRef error ) {
+         << ColumnBreak() << RowBreak();
+ }
+ 
++void ConsoleReporter::testCaseAttemptStarting(
++    TestCaseAttemptInfo const& attemptInfo ) {
++    m_attemptNumber = attemptInfo.attemptNumber;
++    m_maxAttempts = attemptInfo.maxAttempts;
++}
++
++void ConsoleReporter::testCaseAttemptEnded(
++    TestCaseAttemptStats const& attemptStats ) {
++    if ( !attemptStats.isFinal ) {
++        m_tablePrinter->close();
++        m_stream << "Attempt " << attemptStats.attemptNumber << " of "
++                 << attemptStats.maxAttempts
++                 << " failed; retrying test case '"
++                 << attemptStats.testInfo->name << "'\n"
++                 << std::flush;
++        m_headerPrinted = false;
++    }
++}
++
+ void ConsoleReporter::testCaseEnded(TestCaseStats const& _testCaseStats) {
+     m_tablePrinter->close();
++    if ( _testCaseStats.attemptCount > 1 ) {
++        m_stream << "Test case '" << _testCaseStats.testInfo->name << "' ";
++        if ( _testCaseStats.isFlaky ) {
++            m_stream << "passed on attempt " << _testCaseStats.attemptCount
++                     << " of " << _testCaseStats.maxAttempts << " (flaky)\n";
++        } else {
++            m_stream << "failed after " << _testCaseStats.attemptCount
++                     << " of " << _testCaseStats.maxAttempts << " attempts\n";
++        }
++        m_stream << std::flush;
++    }
+     StreamingReporterBase::testCaseEnded(_testCaseStats);
+     m_headerPrinted = false;
++    m_attemptNumber = 0;
++    m_maxAttempts = 0;
+ }
+ void ConsoleReporter::testRunEnded(TestRunStats const& _testRunStats) {
+     printTotalsDivider(_testRunStats.totals);
+@@ -562,7 +594,13 @@ void ConsoleReporter::lazyPrintRunInfo() {
+ }
+ void ConsoleReporter::printTestCaseAndSectionHeader() {
+     assert(!m_sectionStack.empty());
+-    printOpenHeader(currentTestCaseInfo->name);
++    ReusableStringStream testCaseName;
++    testCaseName << currentTestCaseInfo->name;
++    if ( m_attemptNumber > 1 ) {
++        testCaseName << " (attempt " << m_attemptNumber << " of "
++                     << m_maxAttempts << ')';
++    }
++    printOpenHeader(testCaseName.str());
+ 
+     if (m_sectionStack.size() > 1) {
+         auto guard = m_colour->guardColour( Colour::Headers ).engage( m_stream );
+diff --git a/src/catch2/reporters/catch_reporter_console.hpp b/src/catch2/reporters/catch_reporter_console.hpp
+index 86ecf432..918187b5 100644
+--- a/src/catch2/reporters/catch_reporter_console.hpp
++++ b/src/catch2/reporters/catch_reporter_console.hpp
+@@ -36,6 +36,10 @@ namespace Catch {
+         void benchmarkEnded(BenchmarkStats<> const& stats) override;
+         void benchmarkFailed( StringRef error ) override;
+ 
++        void testCaseAttemptStarting(
++            TestCaseAttemptInfo const& attemptInfo ) override;
++        void testCaseAttemptEnded(
++            TestCaseAttemptStats const& attemptStats ) override;
+         void testCaseEnded(TestCaseStats const& _testCaseStats) override;
+         void testRunEnded(TestRunStats const& _testRunStats) override;
+         void testRunStarting(TestRunInfo const& _testRunInfo) override;
+@@ -58,6 +62,8 @@ namespace Catch {
+ 
+         bool m_headerPrinted = false;
+         bool m_testRunInfoPrinted = false;
++        std::uint64_t m_attemptNumber = 0;
++        std::uint64_t m_maxAttempts = 0;
+     };
+ 
+ } // end namespace Catch
+diff --git a/tests/TestScripts/testRetryFailed.py b/tests/TestScripts/testRetryFailed.py
+index 2f3b3f58..e8d53216 100644
+--- a/tests/TestScripts/testRetryFailed.py
++++ b/tests/TestScripts/testRetryFailed.py
+@@ -877,6 +877,84 @@ def main():
+         assert not event_lines(listed, "test-run-ended "), listed
+         assert all(name in listed for name in shard_names), listed
+ 
++        for reporter in ("console", "compact"):
++            no_retry_omitted = run_reporters(
++                test_exe,
++                output_dir,
++                (reporter,),
++                "{}-no-retry-omitted".format(reporter),
++                test_spec="[.retry-immediate]",
++                expected_stdout="immediate execution=1\n",
++            )[0]
++            no_retry_enabled = run_reporters(
++                test_exe,
++                output_dir,
++                (reporter,),
++                "{}-no-retry-enabled".format(reporter),
++                retry_arguments=("--retry-failed", "1"),
++                test_spec="[.retry-immediate]",
++                expected_stdout="immediate execution=1\n",
++            )[0]
++            assert no_retry_enabled == no_retry_omitted, (
++                "{} output changed when retries were enabled but unused"
++                "\nomitted:\n{}\nenabled:\n{}".format(
++                    reporter, no_retry_omitted, no_retry_enabled
++                )
++            )
++
++            human_flaky = run_reporters(
++                test_exe,
++                output_dir,
++                (reporter,),
++                "{}-flaky".format(reporter),
++                retry_arguments=("--retry-failed", "2"),
++                test_spec="[.retry-fail-once]",
++                expected_stdout=(
++                    "fail-once-out execution=1\n"
++                    "fail-once-out execution=2\n"
++                ),
++                expected_stderr=(
++                    "fail-once-err execution=1\n"
++                    "fail-once-err execution=2\n"
++                ),
++            )[0]
++            assert human_flaky.count(
++                "Attempt 1 of 3 failed; "
++                "retrying test case 'retry fail once'"
++            ) == 1, human_flaky
++            assert human_flaky.count(
++                "Test case 'retry fail once' "
++                "passed on attempt 2 of 3 (flaky)"
++            ) == 1, human_flaky
++            assert "All tests passed (1 assertion in 1 test case)" in human_flaky
++
++            human_exhausted = run_reporters(
++                test_exe,
++                output_dir,
++                (reporter,),
++                "{}-exhausted".format(reporter),
++                retry_arguments=("--retry-failed", "2"),
++                test_spec="[.retry-always-fails]",
++                expected_returncode=42,
++                expected_stdout=(
++                    "always-fail execution=1\n"
++                    "always-fail execution=2\n"
++                    "always-fail execution=3\n"
++                ),
++            )[0]
++            for attempt in (1, 2):
++                assert human_exhausted.count(
++                    "Attempt {} of 3 failed; retrying test case "
++                    "'retry always fails'".format(attempt)
++                ) == 1, human_exhausted
++            for attempt in (2, 3):
++                assert "(attempt {} of 3)".format(attempt) in human_exhausted
++            assert human_exhausted.count(
++                "Test case 'retry always fails' failed after 3 of 3 attempts"
++            ) == 1, human_exhausted
++            assert "test cases: 1 | 1 failed" in human_exhausted
++            assert "assertions: 1 | 1 failed" in human_exhausted
++
+         automake_flaky = run_reporters(
+             test_exe,
+             output_dir,
+-- 
+2.56.0.windows.1
+
