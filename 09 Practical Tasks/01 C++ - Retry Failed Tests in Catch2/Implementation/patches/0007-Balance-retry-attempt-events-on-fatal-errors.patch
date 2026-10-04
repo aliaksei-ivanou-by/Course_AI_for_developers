@@ -1,0 +1,277 @@
+From aceaeea120175ef7e3ee1e2346a173bcceee9586 Mon Sep 17 00:00:00 2001
+From: Aliaksei Ivanou <aliaksei.ivanou@innowise.com>
+Date: Sun, 4 Oct 2026 19:45:43 +0200
+Subject: [PATCH] Balance retry attempt events on fatal errors
+
+Track the active retry attempt in RunContext and emit its final attempt-end event before the existing fatal-path test-case and run endings. Preserve the fatal path one-failure totals and expose the active attempt metadata on TestCaseStats.
+
+Add a platform-guarded child-process crash scenario that verifies one balanced attempt, fatal ordering, no retry, and the existing JUnit crash path.
+
+Tests: phase6-validate.ps1 T07 basic (92/92) and all (157/157).
+---
+ src/catch2/internal/catch_run_context.cpp | 28 +++++++--
+ src/catch2/internal/catch_run_context.hpp |  2 +
+ tests/ExtraTests/CMakeLists.txt           | 11 ++++
+ tests/ExtraTests/X96-RetryFailed.cpp      | 33 ++++++++++-
+ tests/TestScripts/testRetryFailedFatal.py | 71 +++++++++++++++++++++++
+ 5 files changed, 139 insertions(+), 6 deletions(-)
+ create mode 100644 tests/TestScripts/testRetryFailedFatal.py
+
+diff --git a/src/catch2/internal/catch_run_context.cpp b/src/catch2/internal/catch_run_context.cpp
+index 2dd7b782..6a3fb09b 100644
+--- a/src/catch2/internal/catch_run_context.cpp
++++ b/src/catch2/internal/catch_run_context.cpp
+@@ -378,6 +378,8 @@ namespace Catch {
+             const std::uint64_t attemptNumber = retriesUsed + 1;
+ 
+             if ( retryCount > 0 ) {
++                m_activeTestCaseAttempt = attemptNumber;
++                m_maxTestCaseAttempts = maxAttempts;
+                 m_reporter->testCaseAttemptStarting( TestCaseAttemptInfo(
+                     testInfo, attemptNumber, maxAttempts ) );
+             }
+@@ -402,6 +404,8 @@ namespace Catch {
+                     CATCH_MOVE( attemptResult.stdErr ),
+                     aborting(),
+                     !retry ) );
++                m_activeTestCaseAttempt = 0;
++                m_maxTestCaseAttempts = 0;
+             }
+ 
+             if ( !retry ) { break; }
+@@ -779,11 +783,25 @@ namespace Catch {
+         Totals deltaTotals;
+         deltaTotals.testCases.failed = 1;
+         deltaTotals.assertions.failed = 1;
+-        m_reporter->testCaseEnded(TestCaseStats(testInfo,
+-                                  deltaTotals,
+-                                  std::string(),
+-                                  std::string(),
+-                                  false));
++        auto testCaseStats = TestCaseStats( testInfo,
++                                            deltaTotals,
++                                            std::string(),
++                                            std::string(),
++                                            false );
++        if ( m_activeTestCaseAttempt > 0 ) {
++            m_reporter->testCaseAttemptEnded( TestCaseAttemptStats(
++                testInfo,
++                m_activeTestCaseAttempt,
++                m_maxTestCaseAttempts,
++                deltaTotals,
++                std::string(),
++                std::string(),
++                false,
++                true ) );
++            testCaseStats.attemptCount = m_activeTestCaseAttempt;
++            testCaseStats.maxAttempts = m_maxTestCaseAttempts;
++        }
++        m_reporter->testCaseEnded( testCaseStats );
+         m_totals.testCases.failed++;
+         updateTotalsFromAtomics();
+         m_reporter->testRunEnded(TestRunStats(m_runInfo, m_totals, false));
+diff --git a/src/catch2/internal/catch_run_context.hpp b/src/catch2/internal/catch_run_context.hpp
+index d9f13e44..38b3f65b 100644
+--- a/src/catch2/internal/catch_run_context.hpp
++++ b/src/catch2/internal/catch_run_context.hpp
+@@ -149,6 +149,8 @@ namespace Catch {
+         mutable Detail::Mutex m_assertionMutex;
+         TestRunInfo m_runInfo;
+         TestCaseHandle const* m_activeTestCase = nullptr;
++        std::uint64_t m_activeTestCaseAttempt = 0;
++        std::uint64_t m_maxTestCaseAttempts = 0;
+         ITracker* m_testCaseTracker = nullptr;
+         Optional<AssertionResult> m_lastResult;
+         IConfig const* m_config;
+diff --git a/tests/ExtraTests/CMakeLists.txt b/tests/ExtraTests/CMakeLists.txt
+index 7b813617..ae0ede6d 100644
+--- a/tests/ExtraTests/CMakeLists.txt
++++ b/tests/ExtraTests/CMakeLists.txt
+@@ -677,6 +677,17 @@ set_tests_properties(RetryFailed::Scenarios
+     LABELS "uses-python"
+ )
+ 
++add_test(
++  NAME RetryFailed::Fatal
++  COMMAND Python3::Interpreter
++    ${CATCH_DIR}/tests/TestScripts/testRetryFailedFatal.py
++    $<TARGET_FILE:RetryFailed>
++)
++set_tests_properties(RetryFailed::Fatal
++  PROPERTIES
++    LABELS "uses-python;uses-signals"
++)
++
+ 
+ set(EXTRA_TEST_BINARIES
+   AllSkipped
+diff --git a/tests/ExtraTests/X96-RetryFailed.cpp b/tests/ExtraTests/X96-RetryFailed.cpp
+index ba175a2c..c78b0a3e 100644
+--- a/tests/ExtraTests/X96-RetryFailed.cpp
++++ b/tests/ExtraTests/X96-RetryFailed.cpp
+@@ -21,11 +21,16 @@
+ #include <catch2/reporters/catch_reporter_registrars.hpp>
+ #include <catch2/reporters/catch_reporter_streaming_base.hpp>
+ 
++#include <csignal>
+ #include <cstdint>
+ #include <iostream>
+ #include <string>
+ #include <utility>
+ 
++#if defined( _MSC_VER )
++#    include <windows.h>
++#endif
++
+ namespace {
+ 
+     std::string escapeOutput( std::string const& value ) {
+@@ -83,6 +88,7 @@ namespace {
+         Catch::TestCaseInfo const* m_testCase = nullptr;
+         bool m_attemptOpen = false;
+         bool m_partialRunOpen = false;
++        bool m_fatalErrorEncountered = false;
+         std::uint64_t m_attemptNumber = 0;
+         std::uint64_t m_maxAttempts = 0;
+         std::uint64_t m_partNumber = 0;
+@@ -172,6 +178,15 @@ namespace {
+             m_stream << '\n';
+         }
+ 
++        void fatalErrorEncountered( Catch::StringRef message ) override {
++            CATCH_ENFORCE( m_testCase && m_attemptOpen && m_partialRunOpen,
++                           "retry-recorder observed a fatal error outside an attempt" );
++            m_fatalErrorEncountered = true;
++            m_stream << "fatal-error-encountered message=\""
++                     << escapeOutput( static_cast<std::string>( message ) )
++                     << "\"\n";
++        }
++
+         void testCasePartialEnded( Catch::TestCaseStats const& stats,
+                                    std::uint64_t partNumber ) override {
+             enforceTestCase( stats.testInfo );
+@@ -187,7 +202,9 @@ namespace {
+         void testCaseAttemptEnded(
+             Catch::TestCaseAttemptStats const& stats ) override {
+             enforceTestCase( stats.testInfo );
+-            CATCH_ENFORCE( m_attemptOpen && !m_partialRunOpen,
++            CATCH_ENFORCE( m_attemptOpen &&
++                               ( !m_partialRunOpen ||
++                                 m_fatalErrorEncountered ),
+                            "retry-recorder received an unmatched attempt end" );
+             CATCH_ENFORCE( m_attemptNumber == stats.attemptNumber &&
+                                m_maxAttempts == stats.maxAttempts,
+@@ -200,8 +217,11 @@ namespace {
+                      << " listener-starts=" << attemptListenerCounts.starts
+                      << " listener-ends=" << attemptListenerCounts.ends;
+             writeStats( m_stream, stats );
++            if ( m_fatalErrorEncountered ) { m_stream << " fatal=true"; }
+             m_stream << '\n';
+             m_attemptOpen = false;
++            m_partialRunOpen = false;
++            m_fatalErrorEncountered = false;
+         }
+ 
+         void testCaseEnded( Catch::TestCaseStats const& stats ) override {
+@@ -234,6 +254,7 @@ namespace {
+             writeCounts( m_stream, stats.totals.testCases );
+             m_stream << "} aborting="
+                      << ( stats.aborting ? "true" : "false" ) << '\n';
++            m_stream.flush();
+             StreamingReporterBase::testRunEnded( stats );
+         }
+     };
+@@ -682,3 +703,13 @@ TEST_CASE( "retry shard D", "[.retry-shard]" ) {
+     ++shardDExecutions;
+     CHECK( shardDExecutions >= 2 );
+ }
++
++TEST_CASE( "retry fatal condition", "[.retry-fatal]" ) {
++    SECTION( "fatal section" ) {
++#if defined( _MSC_VER )
++        RaiseException( 0xC0000005, 0, 0, nullptr );
++#else
++        std::raise( SIGILL );
++#endif
++    }
++}
+diff --git a/tests/TestScripts/testRetryFailedFatal.py b/tests/TestScripts/testRetryFailedFatal.py
+new file mode 100644
+index 00000000..b60ce960
+--- /dev/null
++++ b/tests/TestScripts/testRetryFailedFatal.py
+@@ -0,0 +1,71 @@
++#!/usr/bin/env python3
++
++#              Copyright Catch2 Authors
++# Distributed under the Boost Software License, Version 1.0.
++#   (See accompanying file LICENSE.txt or copy at
++#        https://www.boost.org/LICENSE_1_0.txt)
++
++# SPDX-License-Identifier: BSL-1.0
++
++"""Checks retry attempt events on Catch2's fatal-error path."""
++
++import subprocess
++import sys
++
++
++def event_lines(output, prefix):
++    return [line for line in output.splitlines() if line.startswith(prefix)]
++
++
++def main():
++    test_exe, = sys.argv[1:]
++    command = [
++        test_exe,
++        "[.retry-fatal]",
++        "--retry-failed",
++        "2",
++        "--reporter",
++        "retry-recorder",
++        "--colour-mode",
++        "none",
++    ]
++    result = subprocess.run(
++        command,
++        stdout=subprocess.PIPE,
++        stderr=subprocess.PIPE,
++        timeout=20,
++        check=False,
++        universal_newlines=True,
++    )
++    assert result.returncode != 0, (
++        "Fatal child unexpectedly exited successfully:\n{}".format(command)
++    )
++
++    output = result.stdout
++    starts = event_lines(output, "test-case-attempt-starting ")
++    ends = event_lines(output, "test-case-attempt-ended ")
++    test_ends = event_lines(output, "test-case-ended ")
++    run_ends = event_lines(output, "test-run-ended ")
++    fatal_events = event_lines(output, "fatal-error-encountered ")
++
++    assert len(starts) == 1 and "attempt=1/3" in starts[0], output
++    assert len(fatal_events) == 1, output
++    assert len(ends) == 1 and "attempt=1/3" in ends[0], output
++    assert "assertions={passed=0,failed=1,failed-but-ok=0,skipped=0}" in ends[0]
++    assert "aborting=false final=true" in ends[0], ends[0]
++    assert ends[0].endswith("fatal=true"), ends[0]
++    assert len(test_ends) == 1, output
++    assert "attempts=1/3 flaky=false" in test_ends[0], test_ends[0]
++    assert len(run_ends) == 1, output
++    assert "test-cases={passed=0,failed=1" in run_ends[0], run_ends[0]
++    assert "attempt=2/3" not in output, output
++
++    lines = output.splitlines()
++    assert lines.index(starts[0]) < lines.index(fatal_events[0])
++    assert lines.index(fatal_events[0]) < lines.index(ends[0])
++    assert lines.index(ends[0]) < lines.index(test_ends[0])
++    assert lines.index(test_ends[0]) < lines.index(run_ends[0])
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+-- 
+2.56.0.windows.1
+
