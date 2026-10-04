@@ -1,0 +1,767 @@
+From d3d8deb2b2b30a065609f6c5e157b11c0938d799 Mon Sep 17 00:00:00 2001
+From: Aliaksei Ivanou <aliaksei.ivanou@innowise.com>
+Date: Sun, 4 Oct 2026 20:13:06 +0200
+Subject: [PATCH] Preserve retry diagnostics in JUnit and SonarQube
+
+---
+ .../catch_reporter_cumulative_base.cpp        |  15 ++
+ .../catch_reporter_cumulative_base.hpp        |  14 +-
+ src/catch2/reporters/catch_reporter_junit.cpp | 158 +++++++++++++-----
+ src/catch2/reporters/catch_reporter_junit.hpp |   8 +-
+ .../reporters/catch_reporter_sonarqube.cpp    | 117 +++++++++----
+ tests/ExtraTests/X96-RetryFailed.cpp          |  17 ++
+ tests/TestScripts/testRetryFailed.py          | 133 +++++++++++++++
+ tests/TestScripts/testRetryFailedFatal.py     |  38 +++++
+ 8 files changed, 432 insertions(+), 68 deletions(-)
+
+diff --git a/src/catch2/reporters/catch_reporter_cumulative_base.cpp b/src/catch2/reporters/catch_reporter_cumulative_base.cpp
+index dc5ae4b0..16ebf5df 100644
+--- a/src/catch2/reporters/catch_reporter_cumulative_base.cpp
++++ b/src/catch2/reporters/catch_reporter_cumulative_base.cpp
+@@ -125,16 +125,31 @@ namespace Catch {
+         m_sectionStack.pop_back();
+     }
+ 
++    void CumulativeReporterBase::testCaseAttemptEnded(
++        TestCaseAttemptStats const& attemptStats ) {
++        if ( attemptStats.isFinal ) { return; }
++
++        auto node =
++            Detail::make_unique<TestCaseAttemptNode>( attemptStats );
++        assert( m_sectionStack.empty() );
++        assert( m_rootSection );
++        node->children.push_back( CATCH_MOVE( m_rootSection ) );
++        m_supersededAttempts.push_back( CATCH_MOVE( node ) );
++        m_deepestSection = nullptr;
++    }
++
+     void CumulativeReporterBase::testCaseEnded(
+         TestCaseStats const& testCaseStats ) {
+         auto node = Detail::make_unique<TestCaseNode>( testCaseStats );
+         assert( m_sectionStack.size() == 0 );
+         node->children.push_back( CATCH_MOVE(m_rootSection) );
++        node->supersededAttempts.swap( m_supersededAttempts );
+         m_testCases.push_back( CATCH_MOVE(node) );
+ 
+         assert( m_deepestSection );
+         m_deepestSection->stdOut = testCaseStats.stdOut;
+         m_deepestSection->stdErr = testCaseStats.stdErr;
++        m_deepestSection = nullptr;
+     }
+ 
+ 
+diff --git a/src/catch2/reporters/catch_reporter_cumulative_base.hpp b/src/catch2/reporters/catch_reporter_cumulative_base.hpp
+index 267b39fd..9699d3d4 100644
+--- a/src/catch2/reporters/catch_reporter_cumulative_base.hpp
++++ b/src/catch2/reporters/catch_reporter_cumulative_base.hpp
+@@ -85,8 +85,14 @@ namespace Catch {
+             std::string stdErr;
+         };
+ 
++        using TestCaseAttemptNode = Node<TestCaseAttemptStats, SectionNode>;
++        struct TestCaseNode : Node<TestCaseStats, SectionNode> {
++            explicit TestCaseNode( TestCaseStats const& stats ):
++                Node<TestCaseStats, SectionNode>( stats ) {}
+ 
+-        using TestCaseNode = Node<TestCaseStats, SectionNode>;
++            std::vector<Detail::unique_ptr<TestCaseAttemptNode>>
++                supersededAttempts;
++        };
+         using TestRunNode = Node<TestRunStats, TestCaseNode>;
+ 
+         // GCC5 compat: we cannot use inherited constructor, because it
+@@ -108,6 +114,7 @@ namespace Catch {
+         void testRunStarting( TestRunInfo const& ) override {}
+ 
+         void testCaseStarting( TestCaseInfo const& ) override {}
++        void testCaseAttemptStarting( TestCaseAttemptInfo const& ) override {}
+         void testCasePartialStarting( TestCaseInfo const&, uint64_t ) override {}
+         void sectionStarting( SectionInfo const& sectionInfo ) override;
+ 
+@@ -116,6 +123,8 @@ namespace Catch {
+         void assertionEnded( AssertionStats const& assertionStats ) override;
+         void sectionEnded( SectionStats const& sectionStats ) override;
+         void testCasePartialEnded( TestCaseStats const&, uint64_t ) override {}
++        void testCaseAttemptEnded(
++            TestCaseAttemptStats const& attemptStats ) override;
+         void testCaseEnded( TestCaseStats const& testCaseStats ) override;
+         void testRunEnded( TestRunStats const& testRunStats ) override;
+         //! Customization point: called after last test finishes (testRunEnded has been handled)
+@@ -142,6 +151,9 @@ namespace Catch {
+         Detail::unique_ptr<SectionNode> m_rootSection;
+         // Deepest section of the _current_ test case
+         SectionNode* m_deepestSection = nullptr;
++        // Completed attempts that will be superseded by another attempt
++        std::vector<Detail::unique_ptr<TestCaseAttemptNode>>
++            m_supersededAttempts;
+         // Stack of _active_ sections in the _current_ test case
+         std::vector<SectionNode*> m_sectionStack;
+     };
+diff --git a/src/catch2/reporters/catch_reporter_junit.cpp b/src/catch2/reporters/catch_reporter_junit.cpp
+index 00b45876..0cf91fa0 100644
+--- a/src/catch2/reporters/catch_reporter_junit.cpp
++++ b/src/catch2/reporters/catch_reporter_junit.cpp
+@@ -72,6 +72,71 @@ namespace Catch {
+             return rss.str();
+         }
+ 
++        bool shouldWriteAssertion( AssertionResult const& result ) {
++            return !result.isOk() ||
++                   result.getResultType() == ResultWas::ExplicitSkip;
++        }
++
++        std::string formatAssertion( AssertionStats const& stats ) {
++            AssertionResult const& result = stats.assertionResult;
++            ReusableStringStream rss;
++            if ( result.getResultType() == ResultWas::ExplicitSkip ) {
++                rss << "SKIPPED\n";
++            } else {
++                rss << "FAILED:\n";
++                if ( result.hasExpression() ) {
++                    rss << "  " << result.getExpressionInMacro() << '\n';
++                }
++                if ( result.hasExpandedExpression() ) {
++                    rss << "with expansion:\n"
++                        << TextFlow::Column( result.getExpandedExpression() )
++                               .indent( 2 )
++                        << '\n';
++                }
++            }
++
++            if ( result.hasMessage() ) { rss << result.getMessage() << '\n'; }
++            for ( auto const& msg : stats.infoMessages ) {
++                if ( msg.type == ResultWas::Info ) {
++                    rss << msg.message << '\n';
++                }
++            }
++
++            rss << "at " << result.getSourceInfo();
++            return rss.str();
++        }
++
++        void appendAssertionDiagnostics(
++            CumulativeReporterBase::SectionNode const& sectionNode,
++            ReusableStringStream& rss ) {
++            for ( auto const& assertionOrBenchmark :
++                  sectionNode.assertionsAndBenchmarks ) {
++                if ( assertionOrBenchmark.isAssertion() ) {
++                    auto const& assertion =
++                        assertionOrBenchmark.asAssertion();
++                    if ( shouldWriteAssertion( assertion.assertionResult ) ) {
++                        rss << formatAssertion( assertion ) << '\n';
++                    }
++                }
++            }
++            for ( auto const& child : sectionNode.childSections ) {
++                appendAssertionDiagnostics( *child, rss );
++            }
++        }
++
++        std::string makeSupersededAttemptOutput(
++            CumulativeReporterBase::TestCaseNode const& testCaseNode ) {
++            ReusableStringStream rss;
++            for ( auto const& attempt :
++                  testCaseNode.supersededAttempts ) {
++                rss << "Attempt " << attempt->value.attemptNumber << " of "
++                    << attempt->value.maxAttempts << " failed:\n";
++                assert( attempt->children.size() == 1 );
++                appendAssertionDiagnostics( *attempt->children.front(), rss );
++            }
++            return rss.str();
++        }
++
+         static void normalizeNamespaceMarkers(std::string& str) {
+             std::size_t pos = str.find( "::" );
+             while ( pos != std::string::npos ) {
+@@ -104,18 +169,41 @@ namespace Catch {
+         stdOutForSuite.clear();
+         stdErrForSuite.clear();
+         unexpectedExceptions = 0;
++        m_unexpectedExceptionsInAttempt = 0;
+     }
+ 
+     void JunitReporter::testCaseStarting( TestCaseInfo const& testCaseInfo ) {
+         m_okToFail = testCaseInfo.okToFail();
+     }
+ 
++    void JunitReporter::testCaseAttemptStarting(
++        TestCaseAttemptInfo const& attemptInfo ) {
++        CumulativeReporterBase::testCaseAttemptStarting( attemptInfo );
++        m_unexpectedExceptionsInAttempt = 0;
++    }
++
+     void JunitReporter::assertionEnded( AssertionStats const& assertionStats ) {
+-        if( assertionStats.assertionResult.getResultType() == ResultWas::ThrewException && !m_okToFail )
+-            unexpectedExceptions++;
++        if ( assertionStats.assertionResult.getResultType() ==
++                 ResultWas::ThrewException &&
++             !m_okToFail ) {
++            if ( m_config->retryFailed() > 0 ) {
++                ++m_unexpectedExceptionsInAttempt;
++            } else {
++                ++unexpectedExceptions;
++            }
++        }
+         CumulativeReporterBase::assertionEnded( assertionStats );
+     }
+ 
++    void JunitReporter::testCaseAttemptEnded(
++        TestCaseAttemptStats const& attemptStats ) {
++        if ( attemptStats.isFinal ) {
++            unexpectedExceptions += m_unexpectedExceptionsInAttempt;
++        }
++        m_unexpectedExceptionsInAttempt = 0;
++        CumulativeReporterBase::testCaseAttemptEnded( attemptStats );
++    }
++
+     void JunitReporter::testCaseEnded( TestCaseStats const& testCaseStats ) {
+         stdOutForSuite += testCaseStats.stdOut;
+         stdErrForSuite += testCaseStats.stdErr;
+@@ -188,20 +276,28 @@ namespace Catch {
+ 
+         normalizeNamespaceMarkers(className);
+ 
+-        writeSection( className, "", rootSection, stats.testInfo->okToFail() );
++        auto pendingSystemOut = makeSupersededAttemptOutput( testCaseNode );
++        writeSection( className,
++                      "",
++                      rootSection,
++                      stats.testInfo->okToFail(),
++                      pendingSystemOut );
++        assert( pendingSystemOut.empty() );
+     }
+ 
+     void JunitReporter::writeSection( std::string const& className,
+                                       std::string const& rootName,
+                                       SectionNode const& sectionNode,
+-                                      bool testOkToFail) {
++                                      bool testOkToFail,
++                                      std::string& pendingSystemOut ) {
+         std::string name = trim( sectionNode.stats.sectionInfo.name );
+         if( !rootName.empty() )
+             name = rootName + '/' + name;
+ 
+         if ( sectionNode.stats.assertions.total() > 0
+            || !sectionNode.stdOut.empty()
+-           || !sectionNode.stdErr.empty() ) {
++           || !sectionNode.stdErr.empty()
++           || !pendingSystemOut.empty() ) {
+             XmlWriter::ScopedElement e = xml.scopedElement( "testcase" );
+             if( className.empty() ) {
+                 xml.writeAttribute( "classname"_sr, name );
+@@ -226,16 +322,29 @@ namespace Catch {
+             writeAssertions( sectionNode );
+ 
+ 
+-            if( !sectionNode.stdOut.empty() )
+-                xml.scopedElement( "system-out" ).writeText( trim( sectionNode.stdOut ), XmlFormatting::Newline );
++            if ( !pendingSystemOut.empty() || !sectionNode.stdOut.empty() ) {
++                pendingSystemOut += sectionNode.stdOut;
++                xml.scopedElement( "system-out" )
++                    .writeText( trim( pendingSystemOut ),
++                                XmlFormatting::Newline );
++                pendingSystemOut.clear();
++            }
+             if( !sectionNode.stdErr.empty() )
+                 xml.scopedElement( "system-err" ).writeText( trim( sectionNode.stdErr ), XmlFormatting::Newline );
+         }
+         for( auto const& childNode : sectionNode.childSections )
+             if( className.empty() )
+-                writeSection( name, "", *childNode, testOkToFail );
++                writeSection( name,
++                              "",
++                              *childNode,
++                              testOkToFail,
++                              pendingSystemOut );
+             else
+-                writeSection( className, name, *childNode, testOkToFail );
++                writeSection( className,
++                              name,
++                              *childNode,
++                              testOkToFail,
++                              pendingSystemOut );
+     }
+ 
+     void JunitReporter::writeAssertions( SectionNode const& sectionNode ) {
+@@ -252,10 +361,7 @@ namespace Catch {
+ 
+     bool JunitReporter::writeAssertion( AssertionStats const& stats ) {
+         AssertionResult const& result = stats.assertionResult;
+-        if ( result.isOk() &&
+-             result.getResultType() != ResultWas::ExplicitSkip ) {
+-            return false;
+-        }
++        if ( !shouldWriteAssertion( result ) ) { return false; }
+         std::string elementName;
+         switch ( result.getResultType() ) {
+         case ResultWas::ThrewException:
+@@ -286,31 +392,7 @@ namespace Catch {
+         xml.writeAttribute( "message"_sr, result.getExpression() );
+         xml.writeAttribute( "type"_sr, result.getTestMacroName() );
+ 
+-        ReusableStringStream rss;
+-        if ( result.getResultType() == ResultWas::ExplicitSkip ) {
+-            rss << "SKIPPED\n";
+-        } else {
+-            rss << "FAILED:\n";
+-            if ( result.hasExpression() ) {
+-                rss << "  ";
+-                rss << result.getExpressionInMacro();
+-                rss << '\n';
+-            }
+-            if ( result.hasExpandedExpression() ) {
+-                rss << "with expansion:\n";
+-                rss << TextFlow::Column( result.getExpandedExpression() )
+-                           .indent( 2 )
+-                    << '\n';
+-            }
+-        }
+-
+-        if ( result.hasMessage() ) { rss << result.getMessage() << '\n'; }
+-        for ( auto const& msg : stats.infoMessages ) {
+-            if ( msg.type == ResultWas::Info ) { rss << msg.message << '\n'; }
+-        }
+-
+-        rss << "at " << result.getSourceInfo();
+-        xml.writeText( rss.str(), XmlFormatting::Newline );
++        xml.writeText( formatAssertion( stats ), XmlFormatting::Newline );
+         return true;
+     }
+ 
+diff --git a/src/catch2/reporters/catch_reporter_junit.hpp b/src/catch2/reporters/catch_reporter_junit.hpp
+index a265f78a..d777565e 100644
+--- a/src/catch2/reporters/catch_reporter_junit.hpp
++++ b/src/catch2/reporters/catch_reporter_junit.hpp
+@@ -24,7 +24,11 @@ namespace Catch {
+         void testRunStarting(TestRunInfo const& runInfo) override;
+ 
+         void testCaseStarting(TestCaseInfo const& testCaseInfo) override;
++        void testCaseAttemptStarting(
++            TestCaseAttemptInfo const& attemptInfo ) override;
+         void assertionEnded(AssertionStats const& assertionStats) override;
++        void testCaseAttemptEnded(
++            TestCaseAttemptStats const& attemptStats ) override;
+ 
+         void testCaseEnded(TestCaseStats const& testCaseStats) override;
+ 
+@@ -38,7 +42,8 @@ namespace Catch {
+         void writeSection( std::string const& className,
+                            std::string const& rootName,
+                            SectionNode const& sectionNode,
+-                           bool testOkToFail );
++                           bool testOkToFail,
++                           std::string& pendingSystemOut );
+ 
+         void writeAssertions(SectionNode const& sectionNode);
+         bool writeAssertion(AssertionStats const& stats);
+@@ -48,6 +53,7 @@ namespace Catch {
+         std::string stdOutForSuite;
+         std::string stdErrForSuite;
+         unsigned int unexpectedExceptions = 0;
++        unsigned int m_unexpectedExceptionsInAttempt = 0;
+         bool m_okToFail = false;
+     };
+ 
+diff --git a/src/catch2/reporters/catch_reporter_sonarqube.cpp b/src/catch2/reporters/catch_reporter_sonarqube.cpp
+index 2c3eb1cd..688f74f9 100644
+--- a/src/catch2/reporters/catch_reporter_sonarqube.cpp
++++ b/src/catch2/reporters/catch_reporter_sonarqube.cpp
+@@ -29,6 +29,86 @@ namespace Catch {
+             sstr << "rng-seed=" << config.rngSeed();
+             return sstr.str();
+         }
++
++        bool shouldWriteAssertion( AssertionResult const& result ) {
++            return !result.isOk() ||
++                   result.getResultType() == ResultWas::ExplicitSkip;
++        }
++
++        std::string makeAssertionMessage( AssertionStats const& stats ) {
++            ReusableStringStream rss;
++            rss << stats.assertionResult.getTestMacroName() << '('
++                << stats.assertionResult.getExpression() << ')';
++            return rss.str();
++        }
++
++        std::string makeAssertionText( AssertionStats const& stats ) {
++            AssertionResult const& result = stats.assertionResult;
++            ReusableStringStream rss;
++            if ( result.getResultType() == ResultWas::ExplicitSkip ) {
++                rss << "SKIPPED\n";
++            } else {
++                rss << "FAILED:\n";
++                if ( result.hasExpression() ) {
++                    rss << '\t' << result.getExpressionInMacro() << '\n';
++                }
++                if ( result.hasExpandedExpression() ) {
++                    rss << "with expansion:\n\t"
++                        << result.getExpandedExpression() << '\n';
++                }
++            }
++
++            if ( result.hasMessage() ) { rss << result.getMessage() << '\n'; }
++            for ( auto const& msg : stats.infoMessages ) {
++                if ( msg.type == ResultWas::Info ) {
++                    rss << msg.message << '\n';
++                }
++            }
++            rss << "at " << result.getSourceInfo();
++            return rss.str();
++        }
++
++        void appendAssertionDiagnostics(
++            CumulativeReporterBase::SectionNode const& sectionNode,
++            ReusableStringStream& rss ) {
++            for ( auto const& assertionOrBenchmark :
++                  sectionNode.assertionsAndBenchmarks ) {
++                if ( assertionOrBenchmark.isAssertion() ) {
++                    auto const& assertion =
++                        assertionOrBenchmark.asAssertion();
++                    if ( shouldWriteAssertion( assertion.assertionResult ) ) {
++                        rss << makeAssertionMessage( assertion ) << '\n'
++                            << makeAssertionText( assertion ) << '\n';
++                    }
++                }
++            }
++            for ( auto const& child : sectionNode.childSections ) {
++                appendAssertionDiagnostics( *child, rss );
++            }
++        }
++
++        std::string sanitizeXmlComment( std::string const& text ) {
++            std::string sanitized;
++            sanitized.reserve( text.size() );
++            for ( char c : text ) {
++                if ( c == '-' && !sanitized.empty() &&
++                     sanitized.back() == '-' ) {
++                    sanitized += ' ';
++                }
++                sanitized += c;
++            }
++            return sanitized;
++        }
++
++        std::string makeSupersededAttemptComment(
++            CumulativeReporterBase::TestCaseAttemptNode const& attempt ) {
++            ReusableStringStream rss;
++            rss << "Attempt " << attempt.value.attemptNumber << " of "
++                << attempt.value.maxAttempts << " failed:\n";
++            assert( attempt.children.size() == 1 );
++            appendAssertionDiagnostics( *attempt.children.front(), rss );
++            return sanitizeXmlComment( rss.str() );
++        }
+     }
+ 
+     void SonarQubeReporter::testRunStarting(TestRunInfo const& testRunInfo) {
+@@ -61,6 +141,10 @@ namespace Catch {
+     }
+ 
+     void SonarQubeReporter::writeTestCase(TestCaseNode const& testCaseNode) {
++        for ( auto const& attempt : testCaseNode.supersededAttempts ) {
++            xml.writeComment( makeSupersededAttemptComment( *attempt ) );
++        }
++
+         // All test cases have exactly one section - which represents the
+         // test case itself. That section may have 0-n nested sections
+         assert(testCaseNode.children.size() == 1);
+@@ -97,8 +181,7 @@ namespace Catch {
+ 
+     void SonarQubeReporter::writeAssertion(AssertionStats const& stats, bool okToFail) {
+         AssertionResult const& result = stats.assertionResult;
+-        if ( !result.isOk() ||
+-             result.getResultType() == ResultWas::ExplicitSkip ) {
++        if ( shouldWriteAssertion( result ) ) {
+             std::string elementName;
+             if (okToFail) {
+                 elementName = "skipped";
+@@ -130,32 +213,10 @@ namespace Catch {
+ 
+             XmlWriter::ScopedElement e = xml.scopedElement(elementName);
+ 
+-            ReusableStringStream messageRss;
+-            messageRss << result.getTestMacroName() << '(' << result.getExpression() << ')';
+-            xml.writeAttribute("message"_sr, messageRss.str());
+-
+-            ReusableStringStream textRss;
+-            if ( result.getResultType() == ResultWas::ExplicitSkip ) {
+-                textRss << "SKIPPED\n";
+-            } else {
+-                textRss << "FAILED:\n";
+-                if (result.hasExpression()) {
+-                    textRss << '\t' << result.getExpressionInMacro() << '\n';
+-                }
+-                if (result.hasExpandedExpression()) {
+-                    textRss << "with expansion:\n\t" << result.getExpandedExpression() << '\n';
+-                }
+-            }
+-
+-            if (result.hasMessage())
+-                textRss << result.getMessage() << '\n';
+-
+-            for (auto const& msg : stats.infoMessages)
+-                if (msg.type == ResultWas::Info)
+-                    textRss << msg.message << '\n';
+-
+-            textRss << "at " << result.getSourceInfo();
+-            xml.writeText(textRss.str(), XmlFormatting::Newline);
++            xml.writeAttribute( "message"_sr,
++                                makeAssertionMessage( stats ) );
++            xml.writeText( makeAssertionText( stats ),
++                           XmlFormatting::Newline );
+         }
+     }
+ 
+diff --git a/tests/ExtraTests/X96-RetryFailed.cpp b/tests/ExtraTests/X96-RetryFailed.cpp
+index c78b0a3e..7ae58d66 100644
+--- a/tests/ExtraTests/X96-RetryFailed.cpp
++++ b/tests/ExtraTests/X96-RetryFailed.cpp
+@@ -24,6 +24,7 @@
+ #include <csignal>
+ #include <cstdint>
+ #include <iostream>
++#include <stdexcept>
+ #include <string>
+ #include <utility>
+ 
+@@ -381,6 +382,8 @@ namespace {
+ 
+     unsigned int immediateExecutions = 0;
+     unsigned int failOnceExecutions = 0;
++    unsigned int throwOnceExecutions = 0;
++    unsigned int doubleHyphenExecutions = 0;
+     unsigned int failTwiceExecutions = 0;
+     unsigned int alwaysFailExecutions = 0;
+     unsigned int independentXExecutions = 0;
+@@ -507,6 +510,20 @@ TEST_CASE( "retry fail once",
+     CHECK( failOnceExecutions >= 2 );
+ }
+ 
++TEST_CASE( "retry throws once", "[.retry-throws-once]" ) {
++    ++throwOnceExecutions;
++    if ( throwOnceExecutions == 1 ) {
++        throw std::runtime_error( "throw-once failure" );
++    }
++    CHECK( true );
++}
++
++TEST_CASE( "retry expression with double hyphen",
++           "[.retry-double-hyphen]" ) {
++    auto value = ++doubleHyphenExecutions;
++    CHECK( value-- >= 2 );
++}
++
+ TEST_CASE( "retry fail twice",
+            "[.retry-fail-twice]" ) {
+     ++failTwiceExecutions;
+diff --git a/tests/TestScripts/testRetryFailed.py b/tests/TestScripts/testRetryFailed.py
+index 731c738e..df26a2da 100644
+--- a/tests/TestScripts/testRetryFailed.py
++++ b/tests/TestScripts/testRetryFailed.py
+@@ -182,6 +182,27 @@ def only_json_test_case(output):
+     return document, test_cases[0]
+ 
+ 
++def only_junit_suite(output):
++    root = ET.fromstring(output)
++    assert root.tag == "testsuites", output
++    suites = root.findall("./testsuite")
++    assert len(suites) == 1, output
++    return suites[0]
++
++
++def parse_sonarqube(output):
++    parser = ET.XMLParser(target=ET.TreeBuilder(insert_comments=True))
++    root = ET.fromstring(output, parser=parser)
++    assert root.tag == "testExecutions", output
++    assert root.get("version") == "1", output
++    comments = [
++        element.text or ""
++        for element in root.iter()
++        if element.tag is ET.Comment
++    ]
++    return root, comments
++
++
+ def assertion_counts(passed, failed, failed_but_ok=0, skipped=0):
+     return {
+         "passed": passed,
+@@ -1189,6 +1210,118 @@ def main():
+             "test-cases": assertion_counts(0, 1),
+         }, json_exhausted
+ 
++        junit_flaky = run_reporter(
++            test_exe,
++            output_dir,
++            "JUnit",
++            "junit-flaky",
++            ("--retry-failed", "2"),
++            "[.retry-fail-once]",
++        )
++        junit_flaky_suite = only_junit_suite(junit_flaky)
++        assert junit_flaky_suite.get("errors") == "0", junit_flaky
++        assert junit_flaky_suite.get("failures") == "0", junit_flaky
++        assert junit_flaky_suite.get("tests") == "1", junit_flaky
++        assert junit_flaky_suite.findall(".//failure") == [], junit_flaky
++        assert junit_flaky_suite.findall(".//error") == [], junit_flaky
++        junit_flaky_cases = junit_flaky_suite.findall("./testcase")
++        assert len(junit_flaky_cases) == 1, junit_flaky
++        junit_flaky_out = junit_flaky_cases[0].find("./system-out")
++        assert junit_flaky_out is not None, junit_flaky
++        assert "Attempt 1 of 3 failed:" in junit_flaky_out.text, junit_flaky
++        assert "failOnceExecutions >= 2" in junit_flaky_out.text, junit_flaky
++
++        junit_exhausted = run_reporter(
++            test_exe,
++            output_dir,
++            "JUnit",
++            "junit-exhausted",
++            ("--retry-failed", "2"),
++            "[.retry-always-fails]",
++            42,
++        )
++        junit_exhausted_suite = only_junit_suite(junit_exhausted)
++        assert junit_exhausted_suite.get("errors") == "0", junit_exhausted
++        assert junit_exhausted_suite.get("failures") == "1", junit_exhausted
++        assert junit_exhausted_suite.get("tests") == "1", junit_exhausted
++        assert len(junit_exhausted_suite.findall(".//failure")) == 1
++        assert junit_exhausted_suite.findall(".//error") == []
++        junit_exhausted_case = junit_exhausted_suite.find("./testcase")
++        junit_exhausted_out = junit_exhausted_case.find("./system-out")
++        assert "Attempt 1 of 3 failed:" in junit_exhausted_out.text
++        assert "Attempt 2 of 3 failed:" in junit_exhausted_out.text
++
++        junit_throw_once = run_reporter(
++            test_exe,
++            output_dir,
++            "JUnit",
++            "junit-throw-once",
++            ("--retry-failed", "2"),
++            "[.retry-throws-once]",
++        )
++        junit_throw_once_suite = only_junit_suite(junit_throw_once)
++        assert junit_throw_once_suite.get("errors") == "0", junit_throw_once
++        assert junit_throw_once_suite.get("failures") == "0", junit_throw_once
++        assert junit_throw_once_suite.get("tests") == "1", junit_throw_once
++        assert junit_throw_once_suite.findall(".//failure") == []
++        assert junit_throw_once_suite.findall(".//error") == []
++        junit_throw_once_out = junit_throw_once_suite.find(
++            "./testcase/system-out"
++        )
++        assert "Attempt 1 of 3 failed:" in junit_throw_once_out.text
++        assert "throw-once failure" in junit_throw_once_out.text
++
++        sonar_flaky = run_reporter(
++            test_exe,
++            output_dir,
++            "SonarQube",
++            "sonar-flaky",
++            ("--retry-failed", "2"),
++            "[.retry-fail-once]",
++        )
++        sonar_flaky_root, sonar_flaky_comments = parse_sonarqube(sonar_flaky)
++        assert len(sonar_flaky_comments) == 1, sonar_flaky
++        assert "Attempt 1 of 3 failed:" in sonar_flaky_comments[0]
++        assert "failOnceExecutions >= 2" in sonar_flaky_comments[0]
++        assert sonar_flaky_root.findall(".//failure") == [], sonar_flaky
++        assert sonar_flaky_root.findall(".//error") == [], sonar_flaky
++        assert len(sonar_flaky_root.findall(".//testCase")) == 1
++
++        sonar_exhausted = run_reporter(
++            test_exe,
++            output_dir,
++            "SonarQube",
++            "sonar-exhausted",
++            ("--retry-failed", "2"),
++            "[.retry-always-fails]",
++            42,
++        )
++        sonar_exhausted_root, sonar_exhausted_comments = parse_sonarqube(
++            sonar_exhausted
++        )
++        assert len(sonar_exhausted_comments) == 2, sonar_exhausted
++        assert "Attempt 1 of 3 failed:" in sonar_exhausted_comments[0]
++        assert "Attempt 2 of 3 failed:" in sonar_exhausted_comments[1]
++        assert len(sonar_exhausted_root.findall(".//failure")) == 1
++        assert sonar_exhausted_root.findall(".//error") == []
++
++        sonar_double_hyphen = run_reporter(
++            test_exe,
++            output_dir,
++            "SonarQube",
++            "sonar-double-hyphen",
++            ("--retry-failed", "2"),
++            "[.retry-double-hyphen]",
++        )
++        sonar_hyphen_root, sonar_hyphen_comments = parse_sonarqube(
++            sonar_double_hyphen
++        )
++        assert len(sonar_hyphen_comments) == 1, sonar_double_hyphen
++        assert "--" not in sonar_hyphen_comments[0], sonar_double_hyphen
++        assert "value- -" in sonar_hyphen_comments[0], sonar_double_hyphen
++        assert sonar_hyphen_root.findall(".//failure") == []
++        assert sonar_hyphen_root.findall(".//error") == []
++
+         automake_flaky = run_reporters(
+             test_exe,
+             output_dir,
+diff --git a/tests/TestScripts/testRetryFailedFatal.py b/tests/TestScripts/testRetryFailedFatal.py
+index b60ce960..0273985c 100644
+--- a/tests/TestScripts/testRetryFailedFatal.py
++++ b/tests/TestScripts/testRetryFailedFatal.py
+@@ -9,8 +9,11 @@
+ 
+ """Checks retry attempt events on Catch2's fatal-error path."""
+ 
++from pathlib import Path
+ import subprocess
+ import sys
++import tempfile
++import xml.etree.ElementTree as ET
+ 
+ 
+ def event_lines(output, prefix):
+@@ -66,6 +69,41 @@ def main():
+     assert lines.index(ends[0]) < lines.index(test_ends[0])
+     assert lines.index(test_ends[0]) < lines.index(run_ends[0])
+ 
++    with tempfile.TemporaryDirectory(
++        prefix="catch2-retry-failed-fatal-"
++    ) as temp_dir:
++        junit_path = Path(temp_dir) / "fatal-junit.xml"
++        junit_command = [
++            test_exe,
++            "[.retry-fatal]",
++            "--retry-failed",
++            "2",
++            "--reporter",
++            "JUnit::out={}".format(junit_path),
++            "--colour-mode",
++            "none",
++        ]
++        junit_result = subprocess.run(
++            junit_command,
++            stdout=subprocess.PIPE,
++            stderr=subprocess.PIPE,
++            timeout=20,
++            check=False,
++            universal_newlines=True,
++        )
++        assert junit_result.returncode != 0, (
++            "Fatal JUnit child unexpectedly exited successfully:\n{}".format(
++                junit_command
++            )
++        )
++        junit_output = junit_path.read_text(encoding="utf-8")
++        junit_root = ET.fromstring(junit_output)
++        assert junit_root.tag == "testsuites", junit_output
++        suites = junit_root.findall("./testsuite")
++        assert len(suites) == 1, junit_output
++        assert len(suites[0].findall(".//error")) == 1, junit_output
++        assert "Attempt 2 of 3" not in junit_output, junit_output
++
+ 
+ if __name__ == "__main__":
+     sys.exit(main())
+-- 
+2.56.0.windows.1
+
