@@ -1,0 +1,492 @@
+From 2844e04efb08d1f1bbd205f431d634d1c69aa4e5 Mon Sep 17 00:00:00 2001
+From: Aliaksei Ivanou <aliaksei.ivanou@innowise.com>
+Date: Sun, 4 Oct 2026 20:24:06 +0200
+Subject: [PATCH] Report retries in TeamCity and TAP output
+
+---
+ src/catch2/reporters/catch_reporter_tap.cpp   |  78 ++++++++-
+ src/catch2/reporters/catch_reporter_tap.hpp   |  22 +++
+ .../reporters/catch_reporter_teamcity.cpp     |  45 ++++-
+ .../reporters/catch_reporter_teamcity.hpp     |  14 ++
+ tests/TestScripts/testRetryFailed.py          | 155 +++++++++++++++++-
+ 5 files changed, 305 insertions(+), 9 deletions(-)
+
+diff --git a/src/catch2/reporters/catch_reporter_tap.cpp b/src/catch2/reporters/catch_reporter_tap.cpp
+index d7e68bfd..cd4509ae 100644
+--- a/src/catch2/reporters/catch_reporter_tap.cpp
++++ b/src/catch2/reporters/catch_reporter_tap.cpp
+@@ -12,6 +12,8 @@
+ #include <catch2/interfaces/catch_interfaces_config.hpp>
+ #include <catch2/catch_test_spec.hpp>
+ #include <catch2/reporters/catch_reporter_helpers.hpp>
++#include <catch2/internal/catch_istream.hpp>
++#include <catch2/internal/catch_reusable_string_stream.hpp>
+ 
+ #include <algorithm>
+ #include <ostream>
+@@ -25,6 +27,15 @@ namespace Catch {
+         static constexpr StringRef tapPassedString = "ok"_sr;
+         static constexpr Colour::Code tapDimColour = Colour::FileName;
+ 
++        class TapStringStream final : public IStream {
++        public:
++            std::ostream& stream() override { return m_stream.get(); }
++            std::string str() const { return m_stream.str(); }
++
++        private:
++            ReusableStringStream m_stream;
++        };
++
+         class TapAssertionPrinter {
+         public:
+             TapAssertionPrinter& operator= (TapAssertionPrinter const&) = delete;
+@@ -190,6 +201,18 @@ namespace Catch {
+             ColourImpl* colourImpl;
+         };
+ 
++        void writeTapDiagnostic( std::ostream& stream,
++                                 std::string const& diagnostic ) {
++            stream << "# ";
++            for ( std::size_t i = 0; i < diagnostic.size(); ++i ) {
++                stream << diagnostic[i];
++                if ( diagnostic[i] == '\n' && i + 1 < diagnostic.size() ) {
++                    stream << "# ";
++                }
++            }
++            stream << '\n';
++        }
++
+     } // End anonymous namespace
+ 
+     void TAPReporter::testRunStarting( TestRunInfo const& ) {
+@@ -205,15 +228,66 @@ namespace Catch {
+     }
+ 
+     void TAPReporter::assertionEnded(AssertionStats const& _assertionStats) {
++        if ( m_config->retryFailed() > 0 ) {
++            static_cast<void>(
++                _assertionStats.assertionResult.getExpandedExpression() );
++            m_bufferedAssertions.emplace_back(
++                _assertionStats,
++                static_cast<std::string>( currentTestCaseInfo->name ) );
++            return;
++        }
++
++        BufferedAssertion assertion(
++            _assertionStats,
++            static_cast<std::string>( currentTestCaseInfo->name ) );
++        printAssertion( assertion, m_colour.get() );
++    }
++
++    void TAPReporter::printAssertion( BufferedAssertion const& assertion,
++                                      ColourImpl* colour ) {
+         ++counter;
+ 
+-        m_stream << "# " << currentTestCaseInfo->name << '\n';
+-        TapAssertionPrinter printer(m_stream, _assertionStats, counter, m_colour.get());
++        m_stream << "# " << assertion.testName << '\n';
++        TapAssertionPrinter printer(
++            m_stream, assertion.stats, counter, colour );
+         printer.print();
+ 
+         m_stream << '\n' << std::flush;
+     }
+ 
++    void TAPReporter::testCaseAttemptStarting( TestCaseAttemptInfo const& ) {
++        m_bufferedAssertions.clear();
++    }
++
++    void TAPReporter::testCaseAttemptEnded(
++        TestCaseAttemptStats const& attemptStats ) {
++        if ( attemptStats.isFinal ) {
++            for ( auto const& assertion : m_bufferedAssertions ) {
++                printAssertion( assertion, m_colour.get() );
++            }
++        } else {
++            auto diagnosticCounter = counter;
++            for ( auto const& assertion : m_bufferedAssertions ) {
++                TapStringStream diagnostic;
++                auto noColour =
++                    makeColourImpl( ColourMode::None, &diagnostic );
++                diagnostic.stream() << assertion.testName << '\n';
++                TapAssertionPrinter printer( diagnostic.stream(),
++                                             assertion.stats,
++                                             ++diagnosticCounter,
++                                             noColour.get() );
++                printer.print();
++
++                m_stream << "# Attempt " << attemptStats.attemptNumber
++                         << " of " << attemptStats.maxAttempts
++                         << " failed:\n";
++                writeTapDiagnostic( m_stream, diagnostic.str() );
++            }
++        }
++        m_bufferedAssertions.clear();
++        m_stream.flush();
++    }
++
+     void TAPReporter::testRunEnded(TestRunStats const& _testRunStats) {
+         m_stream << "1.." << _testRunStats.totals.assertions.total();
+         if (_testRunStats.totals.testCases.total() == 0) {
+diff --git a/src/catch2/reporters/catch_reporter_tap.hpp b/src/catch2/reporters/catch_reporter_tap.hpp
+index 4664928f..56f1165d 100644
+--- a/src/catch2/reporters/catch_reporter_tap.hpp
++++ b/src/catch2/reporters/catch_reporter_tap.hpp
+@@ -11,6 +11,9 @@
+ #include <catch2/reporters/catch_reporter_streaming_base.hpp>
+ #include <catch2/internal/catch_move_and_forward.hpp>
+ 
++#include <string>
++#include <vector>
++
+ namespace Catch {
+ 
+     class TAPReporter final : public StreamingReporterBase {
+@@ -32,10 +35,29 @@ namespace Catch {
+ 
+         void assertionEnded(AssertionStats const& _assertionStats) override;
+ 
++        void testCaseAttemptStarting(
++            TestCaseAttemptInfo const& attemptInfo ) override;
++
++        void testCaseAttemptEnded(
++            TestCaseAttemptStats const& attemptStats ) override;
++
+         void testRunEnded(TestRunStats const& _testRunStats) override;
+ 
+     private:
++        struct BufferedAssertion {
++            BufferedAssertion( AssertionStats const& _stats,
++                               std::string _testName ):
++                stats( _stats ), testName( CATCH_MOVE( _testName ) ) {}
++
++            AssertionStats stats;
++            std::string testName;
++        };
++
++        void printAssertion( BufferedAssertion const& assertion,
++                             ColourImpl* colour );
++
+         std::size_t counter = 0;
++        std::vector<BufferedAssertion> m_bufferedAssertions;
+     };
+ 
+ } // end namespace Catch
+diff --git a/src/catch2/reporters/catch_reporter_teamcity.cpp b/src/catch2/reporters/catch_reporter_teamcity.cpp
+index 38aa55a6..0e1cac48 100644
+--- a/src/catch2/reporters/catch_reporter_teamcity.cpp
++++ b/src/catch2/reporters/catch_reporter_teamcity.cpp
+@@ -115,16 +115,25 @@ namespace Catch {
+                     "  " << result.getExpandedExpression() << '\n';
+             }
+ 
++            ReusableStringStream serviceMessage;
+             if ( result.getResultType() == ResultWas::ExplicitSkip ) {
+-                m_stream << "##teamcity[testIgnored";
++                serviceMessage << "##teamcity[testIgnored";
+             } else if ( currentTestCaseInfo->okToFail() ) {
+                 msg << "- failure ignore as test marked as 'ok to fail'\n";
+-                m_stream << "##teamcity[testIgnored";
++                serviceMessage << "##teamcity[testIgnored";
+             } else {
+-                m_stream << "##teamcity[testFailed";
++                serviceMessage << "##teamcity[testFailed";
++            }
++            serviceMessage
++                << " name='" << escape( currentTestCaseInfo->name ) << '\''
++                << " message='" << escape( msg.str() ) << '\'' << "]\n";
++
++            if ( m_config->retryFailed() > 0 ) {
++                m_bufferedAssertions.push_back(
++                    { serviceMessage.str(), msg.str() } );
++            } else {
++                m_stream << serviceMessage.str();
+             }
+-            m_stream << " name='" << escape( currentTestCaseInfo->name ) << '\''
+-                     << " message='" << escape( msg.str() ) << '\'' << "]\n";
+         }
+         m_stream.flush();
+     }
+@@ -137,6 +146,32 @@ namespace Catch {
+         m_stream.flush();
+     }
+ 
++    void TeamCityReporter::testCaseAttemptStarting(
++        TestCaseAttemptInfo const& ) {
++        m_bufferedAssertions.clear();
++    }
++
++    void TeamCityReporter::testCaseAttemptEnded(
++        TestCaseAttemptStats const& attemptStats ) {
++        if ( attemptStats.isFinal ) {
++            for ( auto const& assertion : m_bufferedAssertions ) {
++                m_stream << assertion.serviceMessage;
++            }
++        } else {
++            for ( auto const& assertion : m_bufferedAssertions ) {
++                ReusableStringStream diagnostic;
++                diagnostic << "Attempt " << attemptStats.attemptNumber
++                           << " of " << attemptStats.maxAttempts
++                           << " failed:\n" << assertion.diagnostic;
++                m_stream << "##teamcity[testStdErr name='"
++                         << escape( currentTestCaseInfo->name ) << "' out='"
++                         << escape( diagnostic.str() ) << "']\n";
++            }
++        }
++        m_bufferedAssertions.clear();
++        m_stream.flush();
++    }
++
+     void TeamCityReporter::testCaseEnded(TestCaseStats const& testCaseStats) {
+         StreamingReporterBase::testCaseEnded(testCaseStats);
+         auto const& testCaseInfo = *testCaseStats.testInfo;
+diff --git a/src/catch2/reporters/catch_reporter_teamcity.hpp b/src/catch2/reporters/catch_reporter_teamcity.hpp
+index 4adb0e37..7e8356cd 100644
+--- a/src/catch2/reporters/catch_reporter_teamcity.hpp
++++ b/src/catch2/reporters/catch_reporter_teamcity.hpp
+@@ -12,6 +12,8 @@
+ #include <catch2/catch_timer.hpp>
+ 
+ #include <cstring>
++#include <string>
++#include <vector>
+ 
+ #ifdef __clang__
+ #   pragma clang diagnostic push
+@@ -49,13 +51,25 @@ namespace Catch {
+ 
+         void testCaseStarting(TestCaseInfo const& testInfo) override;
+ 
++        void testCaseAttemptStarting(
++            TestCaseAttemptInfo const& attemptInfo ) override;
++
++        void testCaseAttemptEnded(
++            TestCaseAttemptStats const& attemptStats ) override;
++
+         void testCaseEnded(TestCaseStats const& testCaseStats) override;
+ 
+     private:
++        struct BufferedAssertion {
++            std::string serviceMessage;
++            std::string diagnostic;
++        };
++
+         void printSectionHeader(std::ostream& os);
+ 
+         bool m_headerPrintedForThisSection = false;
+         Timer m_testTimer;
++        std::vector<BufferedAssertion> m_bufferedAssertions;
+     };
+ 
+ } // end namespace Catch
+diff --git a/tests/TestScripts/testRetryFailed.py b/tests/TestScripts/testRetryFailed.py
+index df26a2da..072ee220 100644
+--- a/tests/TestScripts/testRetryFailed.py
++++ b/tests/TestScripts/testRetryFailed.py
+@@ -24,8 +24,6 @@ COMMON_ARGUMENTS = [
+     "lex",
+     "--rng-seed",
+     "123456789",
+-    "--colour-mode",
+-    "none",
+ ]
+ 
+ 
+@@ -40,6 +38,7 @@ def run_reporters(
+     extra_arguments=(),
+     expected_stdout="",
+     expected_stderr="",
++    colour_mode="none",
+ ):
+     output_paths = [
+         output_dir / "{}-{}-{}.txt".format(reporter, index, suffix)
+@@ -49,6 +48,8 @@ def run_reporters(
+         test_exe,
+         test_spec,
+         *COMMON_ARGUMENTS,
++        "--colour-mode",
++        colour_mode,
+         *retry_arguments,
+         *extra_arguments,
+     ]
+@@ -91,6 +92,9 @@ def run_reporter(
+     test_spec=TEST_SPEC,
+     expected_returncode=0,
+     extra_arguments=(),
++    colour_mode="none",
++    expected_stdout="",
++    expected_stderr="",
+ ):
+     return run_reporters(
+         test_exe,
+@@ -101,6 +105,9 @@ def run_reporter(
+         test_spec,
+         expected_returncode,
+         extra_arguments,
++        expected_stdout=expected_stdout,
++        expected_stderr=expected_stderr,
++        colour_mode=colour_mode,
+     )[0]
+ 
+ 
+@@ -203,6 +210,10 @@ def parse_sonarqube(output):
+     return root, comments
+ 
+ 
++def normalize_teamcity_durations(output):
++    return re.sub(r" duration='[0-9]+'", " duration='<duration>'", output)
++
++
+ def assertion_counts(passed, failed, failed_but_ok=0, skipped=0):
+     return {
+         "passed": passed,
+@@ -1322,6 +1333,146 @@ def main():
+         assert sonar_hyphen_root.findall(".//failure") == []
+         assert sonar_hyphen_root.findall(".//error") == []
+ 
++        teamcity_omitted = run_reporter(
++            test_exe,
++            output_dir,
++            "TeamCity",
++            "teamcity-no-retry-omitted",
++            test_spec="[.retry-immediate]",
++        )
++        teamcity_enabled = run_reporter(
++            test_exe,
++            output_dir,
++            "TeamCity",
++            "teamcity-no-retry-enabled",
++            ("--retry-failed", "1"),
++            "[.retry-immediate]",
++        )
++        assert normalize_teamcity_durations(
++            teamcity_enabled
++        ) == normalize_teamcity_durations(teamcity_omitted), (
++            teamcity_omitted,
++            teamcity_enabled,
++        )
++
++        teamcity_flaky = run_reporter(
++            test_exe,
++            output_dir,
++            "TeamCity",
++            "teamcity-flaky",
++            ("--retry-failed", "2"),
++            "[.retry-fail-once]",
++        )
++        assert "##teamcity[testFailed" not in teamcity_flaky, teamcity_flaky
++        assert teamcity_flaky.count("Attempt 1 of 3 failed:") == 1, (
++            teamcity_flaky
++        )
++        assert (
++            "##teamcity[testStdErr name='retry fail once' "
++            "out='Attempt 1 of 3 failed:"
++        ) in teamcity_flaky, teamcity_flaky
++
++        teamcity_exhausted = run_reporter(
++            test_exe,
++            output_dir,
++            "TeamCity",
++            "teamcity-exhausted",
++            ("--retry-failed", "2"),
++            "[.retry-always-fails]",
++            42,
++        )
++        assert teamcity_exhausted.count("##teamcity[testFailed") == 1, (
++            teamcity_exhausted
++        )
++        for attempt in (1, 2):
++            assert teamcity_exhausted.count(
++                "##teamcity[testStdErr name='retry always fails' "
++                "out='Attempt {} of 3 failed:".format(attempt)
++            ) == 1, teamcity_exhausted
++
++        tap_omitted = run_reporter(
++            test_exe,
++            output_dir,
++            "TAP",
++            "tap-no-retry-omitted",
++            test_spec="[.retry-immediate]",
++            colour_mode="ansi",
++            expected_stdout="immediate execution=1\n",
++        )
++        tap_enabled = run_reporter(
++            test_exe,
++            output_dir,
++            "TAP",
++            "tap-no-retry-enabled",
++            ("--retry-failed", "1"),
++            "[.retry-immediate]",
++            colour_mode="ansi",
++            expected_stdout="immediate execution=1\n",
++        )
++        assert tap_enabled == tap_omitted, (tap_omitted, tap_enabled)
++
++        tap_flaky = run_reporter(
++            test_exe,
++            output_dir,
++            "TAP",
++            "tap-flaky",
++            ("--retry-failed", "2"),
++            "[.retry-fail-once]",
++            expected_stdout=(
++                "fail-once-out execution=1\n"
++                "fail-once-out execution=2\n"
++            ),
++            expected_stderr=(
++                "fail-once-err execution=1\n"
++                "fail-once-err execution=2\n"
++            ),
++        )
++        tap_flaky_points = [
++            line
++            for line in tap_flaky.splitlines()
++            if line.startswith(("ok ", "not ok "))
++        ]
++        assert len(tap_flaky_points) == 1, tap_flaky
++        assert tap_flaky_points[0].startswith("ok 1 -"), tap_flaky
++        assert "# Attempt 1 of 3 failed:" in tap_flaky, tap_flaky
++        assert "# not ok 1 -" in tap_flaky, tap_flaky
++        assert [
++            line for line in tap_flaky.splitlines() if line.startswith("1..")
++        ] == ["1..1"], tap_flaky
++
++        tap_exhausted = run_reporter(
++            test_exe,
++            output_dir,
++            "TAP",
++            "tap-exhausted",
++            ("--retry-failed", "2"),
++            "[.retry-always-fails]",
++            42,
++            expected_stdout=(
++                "always-fail execution=1\n"
++                "always-fail execution=2\n"
++                "always-fail execution=3\n"
++            ),
++        )
++        tap_exhausted_points = [
++            line
++            for line in tap_exhausted.splitlines()
++            if line.startswith(("ok ", "not ok "))
++        ]
++        assert len(tap_exhausted_points) == 1, tap_exhausted
++        assert tap_exhausted_points[0].startswith("not ok 1 -"), (
++            tap_exhausted
++        )
++        for attempt in (1, 2):
++            assert "# Attempt {} of 3 failed:".format(attempt) in (
++                tap_exhausted
++            )
++        assert [
++            line
++            for line in tap_exhausted.splitlines()
++            if line.startswith("1..")
++        ] == ["1..1"], tap_exhausted
++
+         automake_flaky = run_reporters(
+             test_exe,
+             output_dir,
+-- 
+2.56.0.windows.1
+
