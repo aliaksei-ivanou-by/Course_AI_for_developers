@@ -99,7 +99,7 @@ testCaseEnded                             once, with the final result
 | E-4 | The attempt-end notification carries the attempt's own result: its assertion counts, its outcome (§3), its captured stdout/stderr, whether it is the final attempt, and whether a retry follows. | A, Reporter Contract; C4 |
 | E-5 | Partial-run events keep their meaning ("one entry into the test case"). Their part number keeps increasing across attempts within one logical test case: attempt 1 uses 0…p, attempt 2 continues at p+1. They are never used as attempt events. | A, Reporter Contract; C2 |
 | E-6 | `testCaseEnded` carries the final result (§6), whether the test case is a flaky pass, the number of attempts used, and `M`. Its captured stdout/stderr is the output of all attempts, in order. | A, Reporter Contract; C4 |
-| E-7 | Every start has a matching end, for failed attempts, the final attempt, an attempt ended by `--abort`/`--abortx`, and, as a best effort, an attempt ended by a fatal error before Catch2's existing fatal-error notifications. | A, Reporter Contract; C10 |
+| E-7 | Every start has a matching end, for failed attempts, the final attempt, an attempt ended by `--abort`/`--abortx`, and, as a best effort, an attempt ended by a fatal error, ended before Catch2's existing fatal-path end of the test case. | A, Reporter Contract; C10 |
 | E-8 | Assertions, sections, messages, benchmarks, and captured output of superseded attempts are delivered to reporters as they happen and are not withdrawn. Running totals attached to individual assertion events are progress information; the attempt-end and test-case-end results are authoritative. | A, Reporter Contract; C6 |
 | E-9 | Reporters that do not handle attempt notifications keep compiling and working; attempt notifications are optional to handle. Multi-reporter forwarding delivers them to every reporter and listener in the same order as other events. | A, Reporter Contract; contract |
 
@@ -119,7 +119,7 @@ When `N ≥ 1` and at least one retry occurs (C7, C8):
 | TAP | Superseded failures are not emitted as failing test points; they remain as TAP diagnostic lines. The final attempt's assertions are emitted as test points as today. |
 | Automake | One result line per logical test case, based on the final outcome. |
 
-With `N ≥ 1` but no retry in the whole run, every reporter's output may differ from Catch2 today only by the structural attempt information of XML and JSON (E-2). With `N = 0`, output is identical to Catch2 today for every reporter (CO-1).
+With `N ≥ 1` but no retry in the whole run, every reporter's output may differ from Catch2 today only by the structural attempt information of XML and JSON (E-2). A reporter that writes an attempt's lines at the end of the attempt (TAP, which does not capture test output) produces the same text, but its lines can interleave differently with output the test writes directly to the console. With `N = 0`, output is identical to Catch2 today for every reporter (CO-1).
 
 ## 6. Final Statistics and Exit Status
 
