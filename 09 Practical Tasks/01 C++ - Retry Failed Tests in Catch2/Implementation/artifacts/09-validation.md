@@ -1,10 +1,8 @@
 # Phase 8 Full Validation and Convergence
 
-Date: 2026-10-05
+Validated Catch2 revision: `a95e3dd10ab0bdbe994152b59152cf220ddb3028` (handoff); follow-up tree `9b5d39ece8842becb9e2dcf049b0b4f797897a82` (T15, below)
 
-Validated Catch2 revision: `a95e3dd10ab0bdbe994152b59152cf220ddb3028`
-
-Baseline: `v3.16.0` (`fd79eadb5bc1760e7cbae12fd45b0d0040d1bb73`)
+Baseline: `v3.16.0` (commit `317ac1ed4c0bb6e6b91eafc817e05c488feffcb3`; annotated tag object `fd79eadb5bc1760e7cbae12fd45b0d0040d1bb73`)
 
 ## Environment
 
@@ -45,6 +43,20 @@ passed all 157 tests. No cause for the one-off timeout was established.
 - A pattern scan of changed files found no PEM private-key headers, common AWS access key IDs, or common GitHub token forms. This is a targeted marker scan, not a general secrets audit.
 - Documentation now describes the accepted-failure reporter exception and `IMPLEMENTATION_NOTES.md` contains post-review commits and validation evidence. No checks were skipped.
 
+## Follow-up Validation (T15)
+
+T15 closed three verification gaps from the review and fixed the defects the new checks found (`08-review.md`, L-2 to L-4). The changes were first built and run on Linux with GCC in a development build, where the amalgamated sources were regenerated with the project script: `basic-tests` 91/91; `RetryFailed::Scenarios`, `RetryFailed::Fatal`, `RetryFailed::DebugBreak`, and `AmalgamatedFileTest` 4/4. Two deliberate regressions confirmed that the new checks fail when they should: suppressing debugger breaks while retries are enabled failed `RetryFailed::DebugBreak`, and the original JUnit and SonarQube message failed the nested-section scenario.
+
+On Windows, `scripts/phase6-validate.ps1` ran from the Implementation directory against the existing incremental build trees:
+
+| Command | Exit | Result |
+| --- | ---: | --- |
+| `phase6-validate.ps1 -Task T15 -Preset basic -Filter 'RunTests\|ApprovalTests'` | 0 | Diff limited to the 11 changed and 2 new task files (548 insertions, 59 deletions); 0 build warnings; focused 2/2; `basic-tests` **92/92**; no `*.unapproved.txt` (`evidence/raw/phase6/T15-run-01-basic/`). |
+| `phase6-validate.ps1 -Task T15 -Preset all -Filter 'RetryFailed::\|AmalgamatedFileTest\|ApprovalTests'` | 0 | 4 build warnings, all baseline `D9025`; focused 15/15; `all-tests` **158/158** with `-j 4` (157 earlier tests plus `RetryFailed::DebugBreak`); no `*.unapproved.txt` (`evidence/raw/phase6/T15-run-02-all/`). |
+| `ctest --test-dir C:\build\Course_AI\catch2\debug-build -C Debug -R 'RetryFailed::Fatal' --repeat until-fail:10 --output-on-failure` | 0 | 10/10 passed, 43–63 seconds per run for 18 crashing children. |
+
+`RetryFailed::Fatal` now runs serially and allows 120 seconds per crashing child instead of 20. On Linux the test takes under a second; on Windows each crashing child took about 2.5 seconds on average, which suggests that the operating system's crash handling, competing with parallel builds, caused the earlier 20-second timeout. This is a hypothesis; the timeout was not reproduced.
+
 ## Gate
 
-All configured `basic-tests` and `all-tests` checks passed on their final runs. The transient fatal-test timeout is recorded above with its successful isolated and full-suite reruns. Generated files, approval baselines, patch reproducibility, documentation, whitespace, and targeted credential-marker checks were reviewed. Phase 8 validation is complete.
+All configured `basic-tests` and `all-tests` checks passed on their final runs. The transient fatal-test timeout is recorded above with its successful isolated and full-suite reruns. Generated files, approval baselines, patch reproducibility, documentation, whitespace, and targeted credential-marker checks were reviewed. The T15 follow-up passed the same `basic-tests` and `all-tests` checks, and all 22 exported patches apply to a clean `v3.16.0` and reproduce tree `9b5d39ece8842becb9e2dcf049b0b4f797897a82`. Phase 8 validation is complete.

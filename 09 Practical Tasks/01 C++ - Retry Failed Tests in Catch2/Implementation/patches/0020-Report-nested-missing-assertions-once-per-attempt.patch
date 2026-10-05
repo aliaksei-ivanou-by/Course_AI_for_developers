@@ -1,0 +1,487 @@
+From 54688c7bf47979cd4d718ed5eabfad9bb998f55d Mon Sep 17 00:00:00 2001
+From: Aliaksei Ivanou <aliaksei.ivanou@innowise.com>
+Date: Mon, 5 Oct 2026 09:47:20 +0200
+Subject: [PATCH] Report nested missing assertions once per attempt
+
+With retries enabled, TAP wrote the 'Attempt k of M failed:' heading before every diagnostic of a superseded attempt; it now writes it once per attempt. JUnit and SonarQube labelled a missing-assertion failure in a leaf section as 'no assertions in test case'; they now say 'no assertions in section' when the test case itself had assertions. Regenerate the amalgamated sources.
+
+Tests: exhausted and fail-then-pass nested-section NoAssertions scenarios for the recorder, JUnit, SonarQube, TeamCity, and TAP.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01GunDRycct3rWzK5p7dpZxP
+---
+ extras/catch_amalgamated.cpp                  |  37 +--
+ extras/catch_amalgamated.hpp                  |   2 +-
+ src/catch2/reporters/catch_reporter_junit.cpp |   7 +-
+ .../reporters/catch_reporter_sonarqube.cpp    |   7 +-
+ src/catch2/reporters/catch_reporter_tap.cpp   |  21 +-
+ tests/ExtraTests/X96-RetryFailed.cpp          |  20 ++
+ tests/TestScripts/testRetryFailed.py          | 228 ++++++++++++++++++
+ 7 files changed, 294 insertions(+), 28 deletions(-)
+
+diff --git a/extras/catch_amalgamated.cpp b/extras/catch_amalgamated.cpp
+index 6f07149b..ed5ad357 100644
+--- a/extras/catch_amalgamated.cpp
++++ b/extras/catch_amalgamated.cpp
+@@ -7,7 +7,7 @@
+ // SPDX-License-Identifier: BSL-1.0
+ 
+ //  Catch v3.16.0
+-//  Generated: 2026-10-05 08:39:03.739368
++//  Generated: 2026-10-05 09:25:05.568202
+ //  ----------------------------------------------------------
+ //  This file is an amalgamation of multiple different files.
+ //  You probably shouldn't edit it directly.
+@@ -11936,8 +11936,11 @@ namespace Catch {
+                 auto failure = xml.scopedElement( "failure" );
+                 if ( pendingSemanticFailure ==
+                      AssertionFreeFailure::MissingAssertions ) {
+-                    failure.writeAttribute( "message"_sr,
+-                                            "no assertions in test case"_sr );
++                    failure.writeAttribute(
++                        "message"_sr,
++                        sectionNode.stats.missingAssertions
++                            ? "no assertions in test case"_sr
++                            : "no assertions in section"_sr );
+                     failure.writeAttribute( "type"_sr, "NoAssertions"_sr );
+                     ReusableStringStream diagnostic;
+                     appendJunitMissingAssertionDiagnostics( sectionNode,
+@@ -12525,8 +12528,11 @@ namespace Catch {
+                 auto failure = xml.scopedElement( "failure" );
+                 if ( pendingSemanticFailure ==
+                      AssertionFreeFailure::MissingAssertions ) {
+-                    failure.writeAttribute( "message"_sr,
+-                                            "no assertions in test case"_sr );
++                    failure.writeAttribute(
++                        "message"_sr,
++                        sectionNode.stats.missingAssertions
++                            ? "no assertions in test case"_sr
++                            : "no assertions in section"_sr );
+                     ReusableStringStream diagnostic;
+                     appendSonarQubeMissingAssertionDiagnostics( sectionNode,
+                                                                 diagnostic );
+@@ -12936,6 +12942,15 @@ namespace Catch {
+         } else {
+             auto diagnosticCounter = counter;
+             bool reportedFailure = false;
++            bool wroteHeading = false;
++            auto writeHeading = [&]() {
++                if ( !wroteHeading ) {
++                    m_stream << "# Attempt " << attemptStats.attemptNumber
++                             << " of " << attemptStats.maxAttempts
++                             << " failed:\n";
++                    wroteHeading = true;
++                }
++            };
+             for ( auto const& assertion : m_bufferedAssertions ) {
+                 reportedFailure =
+                     reportedFailure ||
+@@ -12950,16 +12965,12 @@ namespace Catch {
+                                              noColour.get() );
+                 printer.print();
+ 
+-                m_stream << "# Attempt " << attemptStats.attemptNumber
+-                         << " of " << attemptStats.maxAttempts
+-                         << " failed:\n";
++                writeHeading();
+                 writeTapDiagnostic( m_stream, diagnostic.str() );
+             }
+             for ( auto const& diagnostic :
+                   m_missingAssertionDiagnostics ) {
+-                m_stream << "# Attempt " << attemptStats.attemptNumber
+-                         << " of " << attemptStats.maxAttempts
+-                         << " failed:\n";
++                writeHeading();
+                 writeTapDiagnostic( m_stream, diagnostic );
+                 reportedFailure = true;
+             }
+@@ -12971,9 +12982,7 @@ namespace Catch {
+                                     ? "passed but was expected to fail "
+                                       "([!shouldfail])"
+                                     : "failed without a failed assertion" );
+-                m_stream << "# Attempt " << attemptStats.attemptNumber
+-                         << " of " << attemptStats.maxAttempts
+-                         << " failed:\n";
++                writeHeading();
+                 writeTapDiagnostic( m_stream, diagnostic.str() );
+             }
+         }
+diff --git a/extras/catch_amalgamated.hpp b/extras/catch_amalgamated.hpp
+index fc826b02..a5488d6a 100644
+--- a/extras/catch_amalgamated.hpp
++++ b/extras/catch_amalgamated.hpp
+@@ -7,7 +7,7 @@
+ // SPDX-License-Identifier: BSL-1.0
+ 
+ //  Catch v3.16.0
+-//  Generated: 2026-10-05 08:39:03.711378
++//  Generated: 2026-10-05 09:25:05.556845
+ //  ----------------------------------------------------------
+ //  This file is an amalgamation of multiple different files.
+ //  You probably shouldn't edit it directly.
+diff --git a/src/catch2/reporters/catch_reporter_junit.cpp b/src/catch2/reporters/catch_reporter_junit.cpp
+index bbdb2bb4..6737f5bf 100644
+--- a/src/catch2/reporters/catch_reporter_junit.cpp
++++ b/src/catch2/reporters/catch_reporter_junit.cpp
+@@ -450,8 +450,11 @@ namespace Catch {
+                 auto failure = xml.scopedElement( "failure" );
+                 if ( pendingSemanticFailure ==
+                      AssertionFreeFailure::MissingAssertions ) {
+-                    failure.writeAttribute( "message"_sr,
+-                                            "no assertions in test case"_sr );
++                    failure.writeAttribute(
++                        "message"_sr,
++                        sectionNode.stats.missingAssertions
++                            ? "no assertions in test case"_sr
++                            : "no assertions in section"_sr );
+                     failure.writeAttribute( "type"_sr, "NoAssertions"_sr );
+                     ReusableStringStream diagnostic;
+                     appendJunitMissingAssertionDiagnostics( sectionNode,
+diff --git a/src/catch2/reporters/catch_reporter_sonarqube.cpp b/src/catch2/reporters/catch_reporter_sonarqube.cpp
+index cd175994..625c9a8c 100644
+--- a/src/catch2/reporters/catch_reporter_sonarqube.cpp
++++ b/src/catch2/reporters/catch_reporter_sonarqube.cpp
+@@ -250,8 +250,11 @@ namespace Catch {
+                 auto failure = xml.scopedElement( "failure" );
+                 if ( pendingSemanticFailure ==
+                      AssertionFreeFailure::MissingAssertions ) {
+-                    failure.writeAttribute( "message"_sr,
+-                                            "no assertions in test case"_sr );
++                    failure.writeAttribute(
++                        "message"_sr,
++                        sectionNode.stats.missingAssertions
++                            ? "no assertions in test case"_sr
++                            : "no assertions in section"_sr );
+                     ReusableStringStream diagnostic;
+                     appendSonarQubeMissingAssertionDiagnostics( sectionNode,
+                                                                 diagnostic );
+diff --git a/src/catch2/reporters/catch_reporter_tap.cpp b/src/catch2/reporters/catch_reporter_tap.cpp
+index eaaeaf1f..6f5ca52b 100644
+--- a/src/catch2/reporters/catch_reporter_tap.cpp
++++ b/src/catch2/reporters/catch_reporter_tap.cpp
+@@ -321,6 +321,15 @@ namespace Catch {
+         } else {
+             auto diagnosticCounter = counter;
+             bool reportedFailure = false;
++            bool wroteHeading = false;
++            auto writeHeading = [&]() {
++                if ( !wroteHeading ) {
++                    m_stream << "# Attempt " << attemptStats.attemptNumber
++                             << " of " << attemptStats.maxAttempts
++                             << " failed:\n";
++                    wroteHeading = true;
++                }
++            };
+             for ( auto const& assertion : m_bufferedAssertions ) {
+                 reportedFailure =
+                     reportedFailure ||
+@@ -335,16 +344,12 @@ namespace Catch {
+                                              noColour.get() );
+                 printer.print();
+ 
+-                m_stream << "# Attempt " << attemptStats.attemptNumber
+-                         << " of " << attemptStats.maxAttempts
+-                         << " failed:\n";
++                writeHeading();
+                 writeTapDiagnostic( m_stream, diagnostic.str() );
+             }
+             for ( auto const& diagnostic :
+                   m_missingAssertionDiagnostics ) {
+-                m_stream << "# Attempt " << attemptStats.attemptNumber
+-                         << " of " << attemptStats.maxAttempts
+-                         << " failed:\n";
++                writeHeading();
+                 writeTapDiagnostic( m_stream, diagnostic );
+                 reportedFailure = true;
+             }
+@@ -356,9 +361,7 @@ namespace Catch {
+                                     ? "passed but was expected to fail "
+                                       "([!shouldfail])"
+                                     : "failed without a failed assertion" );
+-                m_stream << "# Attempt " << attemptStats.attemptNumber
+-                         << " of " << attemptStats.maxAttempts
+-                         << " failed:\n";
++                writeHeading();
+                 writeTapDiagnostic( m_stream, diagnostic.str() );
+             }
+         }
+diff --git a/tests/ExtraTests/X96-RetryFailed.cpp b/tests/ExtraTests/X96-RetryFailed.cpp
+index ffc109ce..68d75caf 100644
+--- a/tests/ExtraTests/X96-RetryFailed.cpp
++++ b/tests/ExtraTests/X96-RetryFailed.cpp
+@@ -390,6 +390,7 @@ namespace {
+     unsigned int independentXExecutions = 0;
+     unsigned int independentYExecutions = 0;
+     unsigned int noAssertionsFlakyExecutions = 0;
++    unsigned int nestedNoAssertionsFlakyExecutions = 0;
+     unsigned int shouldFailPassExecutions = 0;
+     unsigned int shouldFailTransitionExecutions = 0;
+     unsigned int abortBudgetFlakyExecutions = 0;
+@@ -550,6 +551,25 @@ TEST_CASE( "retry missing assertions then passes",
+ TEST_CASE( "retry missing assertions always fails",
+            "[.retry-no-assertions-always]" ) {}
+ 
++TEST_CASE( "retry nested sections missing assertions then passes",
++           "[.retry-nested-no-assertions-flaky]" ) {
++    SECTION( "outer" ) {
++        SECTION( "inner with assertion" ) { CHECK( true ); }
++        SECTION( "inner without assertion" ) {
++            ++nestedNoAssertionsFlakyExecutions;
++            if ( nestedNoAssertionsFlakyExecutions >= 2 ) { CHECK( true ); }
++        }
++    }
++}
++
++TEST_CASE( "retry nested sections missing assertions always fails",
++           "[.retry-nested-no-assertions-always]" ) {
++    SECTION( "outer" ) {
++        SECTION( "inner with assertion" ) { CHECK( true ); }
++        SECTION( "inner without assertion" ) {}
++    }
++}
++
+ TEST_CASE( "retry junit multiple passing assertions",
+            "[.retry-junit-multiple-passes]" ) {
+     CHECK( true );
+diff --git a/tests/TestScripts/testRetryFailed.py b/tests/TestScripts/testRetryFailed.py
+index 0a1efeb6..0aee2baa 100644
+--- a/tests/TestScripts/testRetryFailed.py
++++ b/tests/TestScripts/testRetryFailed.py
+@@ -1995,6 +1995,234 @@ def main():
+             if line.startswith("1..")
+         ] == ["1..1"], tap_noassert_exhausted
+ 
++        # Missing assertions in a nested leaf section, not in the test case
++        # itself. Exhausted and fail-then-pass runs, for the recorder and
++        # for every reporter that reports assertion-free failures.
++        nested_flaky_name = (
++            "retry nested sections missing assertions then passes"
++        )
++        nested_always_name = (
++            "retry nested sections missing assertions always fails"
++        )
++        nested_reason = "No assertions in section 'inner without assertion'"
++        nested_flaky = run_retry_scenario(
++            test_exe,
++            output_dir,
++            "nested-noassert-flaky",
++            "[.retry-nested-no-assertions-flaky]",
++            2,
++            extra_arguments=("-w", "NoAssertions"),
++        )
++        assert_attempts(
++            nested_flaky, nested_flaky_name, [1, 2], 3, True, True
++        )
++        nested_always = run_retry_scenario(
++            test_exe,
++            output_dir,
++            "nested-noassert-always",
++            "[.retry-nested-no-assertions-always]",
++            1,
++            42,
++            extra_arguments=("-w", "NoAssertions"),
++        )
++        assert_attempts(
++            nested_always, nested_always_name, [1, 2], 2, False, False
++        )
++        for line in event_lines(
++            nested_always, "test-case-attempt-ended ", nested_always_name
++        ):
++            assert "assertions={passed=1,failed=1" in line, line
++
++        junit_nested_flaky = only_junit_suite(
++            run_reporter(
++                test_exe,
++                output_dir,
++                "JUnit",
++                "junit-nested-noassert-flaky",
++                ("--retry-failed", "2"),
++                "[.retry-nested-no-assertions-flaky]",
++                extra_arguments=("-w", "NoAssertions"),
++            )
++        )
++        assert junit_nested_flaky.get("tests") == "1"
++        assert junit_nested_flaky.get("failures") == "0"
++        assert junit_nested_flaky.get("errors") == "0"
++        assert junit_nested_flaky.findall(".//failure") == []
++        junit_nested_flaky_out = "".join(
++            element.text or ""
++            for element in junit_nested_flaky.findall("./testcase/system-out")
++        )
++        assert junit_nested_flaky_out.count("Attempt 1 of 3 failed:") == 1
++        assert nested_reason in junit_nested_flaky_out
++
++        junit_nested_always_output = run_reporter(
++            test_exe,
++            output_dir,
++            "JUnit",
++            "junit-nested-noassert-always",
++            ("--retry-failed", "1"),
++            "[.retry-nested-no-assertions-always]",
++            42,
++            extra_arguments=("-w", "NoAssertions"),
++        )
++        junit_nested_always = only_junit_suite(junit_nested_always_output)
++        assert junit_nested_always.get("tests") == "1"
++        assert junit_nested_always.get("failures") == "1"
++        assert junit_nested_always.get("errors") == "0"
++        junit_nested_failures = junit_nested_always.findall(".//failure")
++        assert len(junit_nested_failures) == 1, junit_nested_always_output
++        assert junit_nested_failures[0].get("type") == "NoAssertions"
++        assert (
++            junit_nested_failures[0].get("message")
++            == "no assertions in section"
++        ), junit_nested_always_output
++        assert nested_reason in (junit_nested_failures[0].text or "")
++        junit_nested_always_out = "".join(
++            element.text or ""
++            for element in junit_nested_always.findall(
++                "./testcase/system-out"
++            )
++        )
++        assert junit_nested_always_out.count("Attempt 1 of 2 failed:") == 1
++        assert nested_reason in junit_nested_always_out
++
++        (
++            sonar_nested_flaky_root,
++            sonar_nested_flaky_comments,
++        ) = parse_sonarqube(
++            run_reporter(
++                test_exe,
++                output_dir,
++                "SonarQube",
++                "sonar-nested-noassert-flaky",
++                ("--retry-failed", "2"),
++                "[.retry-nested-no-assertions-flaky]",
++                extra_arguments=("-w", "NoAssertions"),
++            )
++        )
++        assert sonar_nested_flaky_root.findall(".//failure") == []
++        assert sonar_nested_flaky_root.findall(".//error") == []
++        assert len(sonar_nested_flaky_comments) == 1
++        assert "Attempt 1 of 3 failed:" in sonar_nested_flaky_comments[0]
++        assert nested_reason in sonar_nested_flaky_comments[0]
++
++        (
++            sonar_nested_always_root,
++            sonar_nested_always_comments,
++        ) = parse_sonarqube(
++            run_reporter(
++                test_exe,
++                output_dir,
++                "SonarQube",
++                "sonar-nested-noassert-always",
++                ("--retry-failed", "1"),
++                "[.retry-nested-no-assertions-always]",
++                42,
++                extra_arguments=("-w", "NoAssertions"),
++            )
++        )
++        sonar_nested_failures = sonar_nested_always_root.findall(
++            ".//failure"
++        )
++        assert len(sonar_nested_failures) == 1
++        assert (
++            sonar_nested_failures[0].get("message")
++            == "no assertions in section"
++        )
++        assert nested_reason in (sonar_nested_failures[0].text or "")
++        assert len(sonar_nested_always_comments) == 1
++        assert "Attempt 1 of 2 failed:" in sonar_nested_always_comments[0]
++        assert nested_reason in sonar_nested_always_comments[0]
++
++        teamcity_nested_reason = (
++            "No assertions in section |'inner without assertion|'"
++        )
++        teamcity_nested_flaky = run_reporter(
++            test_exe,
++            output_dir,
++            "TeamCity",
++            "teamcity-nested-noassert-flaky",
++            ("--retry-failed", "2"),
++            "[.retry-nested-no-assertions-flaky]",
++            extra_arguments=("-w", "NoAssertions"),
++        )
++        assert "##teamcity[testFailed" not in teamcity_nested_flaky
++        assert teamcity_nested_flaky.count(
++            "##teamcity[testStdErr name='{}'".format(nested_flaky_name)
++        ) == 1, teamcity_nested_flaky
++        assert "Attempt 1 of 3 failed:" in teamcity_nested_flaky
++        assert teamcity_nested_reason in teamcity_nested_flaky
++
++        teamcity_nested_always = run_reporter(
++            test_exe,
++            output_dir,
++            "TeamCity",
++            "teamcity-nested-noassert-always",
++            ("--retry-failed", "1"),
++            "[.retry-nested-no-assertions-always]",
++            42,
++            extra_arguments=("-w", "NoAssertions"),
++        )
++        assert teamcity_nested_always.count(
++            "##teamcity[testFailed name='{}' message='{}'".format(
++                nested_always_name, teamcity_nested_reason
++            )
++        ) == 1, teamcity_nested_always
++        assert teamcity_nested_always.count(
++            "##teamcity[testStdErr name='{}'".format(nested_always_name)
++        ) == 1, teamcity_nested_always
++        assert "Attempt 1 of 2 failed:" in teamcity_nested_always
++
++        tap_nested_flaky = run_reporter(
++            test_exe,
++            output_dir,
++            "TAP",
++            "tap-nested-noassert-flaky",
++            ("--retry-failed", "2"),
++            "[.retry-nested-no-assertions-flaky]",
++            extra_arguments=("-w", "NoAssertions"),
++        )
++        tap_nested_flaky_lines = tap_nested_flaky.splitlines()
++        assert [
++            line
++            for line in tap_nested_flaky_lines
++            if line.startswith(("ok ", "not ok "))
++        ] == ["ok 1 - true", "ok 2 - true"], tap_nested_flaky
++        assert tap_nested_flaky_lines.count(
++            "# Attempt 1 of 3 failed:"
++        ) == 1, tap_nested_flaky
++        assert "# " + nested_reason in tap_nested_flaky_lines
++        assert [
++            line for line in tap_nested_flaky_lines if line.startswith("1..")
++        ] == ["1..2"], tap_nested_flaky
++
++        tap_nested_always = run_reporter(
++            test_exe,
++            output_dir,
++            "TAP",
++            "tap-nested-noassert-always",
++            ("--retry-failed", "1"),
++            "[.retry-nested-no-assertions-always]",
++            42,
++            extra_arguments=("-w", "NoAssertions"),
++        )
++        tap_nested_always_lines = tap_nested_always.splitlines()
++        assert [
++            line
++            for line in tap_nested_always_lines
++            if line.startswith(("ok ", "not ok "))
++        ] == [
++            "ok 1 - true",
++            "not ok 2 - " + nested_reason,
++        ], tap_nested_always
++        assert tap_nested_always_lines.count(
++            "# Attempt 1 of 2 failed:"
++        ) == 1, tap_nested_always
++        assert "# " + nested_reason in tap_nested_always_lines
++        assert [
++            line for line in tap_nested_always_lines if line.startswith("1..")
++        ] == ["1..2"], tap_nested_always
++
+         tap_mayfail = run_reporter(
+             test_exe,
+             output_dir,
+-- 
+2.56.0.windows.1
+

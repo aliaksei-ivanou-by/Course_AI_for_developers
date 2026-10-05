@@ -1,0 +1,491 @@
+From 01fc6c056a5e3eadacf311e28cc01fbef427e684 Mon Sep 17 00:00:00 2001
+From: Aliaksei Ivanou <aliaksei.ivanou@innowise.com>
+Date: Mon, 5 Oct 2026 09:47:20 +0200
+Subject: [PATCH] Cover fatal reporters and debugger breaks with retries
+
+RetryFailed::Fatal now compares the fatal-path output of every built-in reporter with and without --retry-failed, runs serially, and allows 120 seconds per crashing child. RetryFailed::DebugBreak builds against the amalgamated sources with a recording CATCH_BREAK_INTO_DEBUGGER and checks that --break reaches every failed assertion of every attempt.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01GunDRycct3rWzK5p7dpZxP
+---
+ tests/ExtraTests/CMakeLists.txt               |  22 ++
+ .../ExtraTests/X97-RetryFailedDebugBreak.cpp  |  74 +++++++
+ .../TestScripts/testRetryFailedDebugBreak.py  | 106 +++++++++
+ tests/TestScripts/testRetryFailedFatal.py     | 203 +++++++++++++++---
+ 4 files changed, 381 insertions(+), 24 deletions(-)
+ create mode 100644 tests/ExtraTests/X97-RetryFailedDebugBreak.cpp
+ create mode 100644 tests/TestScripts/testRetryFailedDebugBreak.py
+
+diff --git a/tests/ExtraTests/CMakeLists.txt b/tests/ExtraTests/CMakeLists.txt
+index ae0ede6d..2817a7f8 100644
+--- a/tests/ExtraTests/CMakeLists.txt
++++ b/tests/ExtraTests/CMakeLists.txt
+@@ -686,6 +686,28 @@ add_test(
+ set_tests_properties(RetryFailed::Fatal
+   PROPERTIES
+     LABELS "uses-python;uses-signals"
++    # Every child process crashes on purpose. Running alone keeps the
++    # operating system's crash handling from competing with parallel tests.
++    RUN_SERIAL ON
++    TIMEOUT 600
++)
++
++# Compiled against the amalgamated sources, because the debugger break
++# happens inside the library and must be replaced by a recording macro.
++add_executable(RetryFailedDebugBreak
++  ${TESTS_DIR}/X97-RetryFailedDebugBreak.cpp
++)
++target_include_directories(RetryFailedDebugBreak PRIVATE ${CATCH_DIR}/extras)
++target_compile_features(RetryFailedDebugBreak PRIVATE cxx_std_14)
++add_test(
++  NAME RetryFailed::DebugBreak
++  COMMAND Python3::Interpreter
++    ${CATCH_DIR}/tests/TestScripts/testRetryFailedDebugBreak.py
++    $<TARGET_FILE:RetryFailedDebugBreak>
++)
++set_tests_properties(RetryFailed::DebugBreak
++  PROPERTIES
++    LABELS "uses-python"
+ )
+ 
+ 
+diff --git a/tests/ExtraTests/X97-RetryFailedDebugBreak.cpp b/tests/ExtraTests/X97-RetryFailedDebugBreak.cpp
+new file mode 100644
+index 00000000..f4794806
+--- /dev/null
++++ b/tests/ExtraTests/X97-RetryFailedDebugBreak.cpp
+@@ -0,0 +1,74 @@
++//              Copyright Catch2 Authors
++// Distributed under the Boost Software License, Version 1.0.
++//   (See accompanying file LICENSE.txt or copy at
++//        https://www.boost.org/LICENSE_1_0.txt)
++
++// SPDX-License-Identifier: BSL-1.0
++
++/**\file
++ * Checks that `--break` still reaches the debugger break of every failed
++ * assertion when `--retry-failed` is used, including in superseded attempts.
++ *
++ * The debugger break happens inside the Catch2 library, so this test is
++ * compiled against the amalgamated sources with a custom
++ * `CATCH_BREAK_INTO_DEBUGGER`, which writes to stdout instead of trapping.
++ * A small reporter writes attempt boundaries to the same stream, so that
++ * tests/TestScripts/testRetryFailedDebugBreak.py can check where each break
++ * happened.
++ */
++
++#include <iostream>
++
++namespace {
++    void recordDebugBreak() { std::cout << "debug-break" << std::endl; }
++} // namespace
++
++#define CATCH_BREAK_INTO_DEBUGGER() recordDebugBreak()
++
++#include "catch_amalgamated.cpp"
++
++namespace {
++    class AttemptBoundaryReporter : public Catch::StreamingReporterBase {
++    public:
++        using StreamingReporterBase::StreamingReporterBase;
++        ~AttemptBoundaryReporter() override;
++
++        static std::string getDescription() {
++            return "Writes attempt boundaries for the debug break test";
++        }
++
++        void testCaseAttemptStarting(
++            Catch::TestCaseAttemptInfo const& attemptInfo ) override {
++            m_stream << "attempt-starting " << attemptInfo.attemptNumber
++                     << '/' << attemptInfo.maxAttempts << std::endl;
++        }
++        void testCaseAttemptEnded(
++            Catch::TestCaseAttemptStats const& attemptStats ) override {
++            m_stream << "attempt-ended " << attemptStats.attemptNumber << '/'
++                     << attemptStats.maxAttempts
++                     << ( attemptStats.isFinal ? " final" : " retry" )
++                     << std::endl;
++        }
++        void testCaseEnded( Catch::TestCaseStats const& stats ) override {
++            m_stream << "test-case-ended attempts=" << stats.attemptCount
++                     << '/' << stats.maxAttempts
++                     << " flaky=" << ( stats.isFlaky ? "true" : "false" )
++                     << std::endl;
++        }
++    };
++    AttemptBoundaryReporter::~AttemptBoundaryReporter() = default;
++
++    unsigned int flakyExecutions = 0;
++} // namespace
++
++CATCH_REGISTER_REPORTER( "attempt-boundaries", AttemptBoundaryReporter )
++
++TEST_CASE( "debug break fails once", "[.debug-break-flaky]" ) {
++    ++flakyExecutions;
++    CHECK( flakyExecutions >= 2 );
++}
++
++TEST_CASE( "debug break always fails", "[.debug-break-always]" ) {
++    CHECK( false );
++    CHECK( false );
++}
+diff --git a/tests/TestScripts/testRetryFailedDebugBreak.py b/tests/TestScripts/testRetryFailedDebugBreak.py
+new file mode 100644
+index 00000000..2e8b9fe5
+--- /dev/null
++++ b/tests/TestScripts/testRetryFailedDebugBreak.py
+@@ -0,0 +1,106 @@
++#!/usr/bin/env python3
++
++#              Copyright Catch2 Authors
++# Distributed under the Boost Software License, Version 1.0.
++#   (See accompanying file LICENSE.txt or copy at
++#        https://www.boost.org/LICENSE_1_0.txt)
++
++# SPDX-License-Identifier: BSL-1.0
++
++"""Checks that --break reaches every failed assertion with --retry-failed.
++
++The test binary replaces Catch2's debugger break with a line on stdout, and
++its reporter writes attempt boundaries to the same stream.
++"""
++
++import subprocess
++import sys
++
++
++def run(test_exe, test_spec, expected_returncode, *arguments):
++    command = [
++        test_exe,
++        test_spec,
++        "--reporter",
++        "attempt-boundaries",
++        "--colour-mode",
++        "none",
++        *arguments,
++    ]
++    result = subprocess.run(
++        command,
++        stdout=subprocess.PIPE,
++        stderr=subprocess.PIPE,
++        timeout=60,
++        check=False,
++        universal_newlines=True,
++    )
++    assert result.returncode == expected_returncode, (
++        "Command returned {}, expected {}:\n{}\nstdout:\n{}\nstderr:\n{}".format(
++            result.returncode,
++            expected_returncode,
++            command,
++            result.stdout,
++            result.stderr,
++        )
++    )
++    return result.stdout.splitlines()
++
++
++def main():
++    test_exe, = sys.argv[1:]
++
++    # Without --break, failed assertions do not break.
++    assert run(
++        test_exe, "[.debug-break-flaky]", 0, "--retry-failed", "2"
++    ) == [
++        "attempt-starting 1/3",
++        "attempt-ended 1/3 retry",
++        "attempt-starting 2/3",
++        "attempt-ended 2/3 final",
++        "test-case-ended attempts=2/3 flaky=true",
++    ]
++
++    # Without retries, the one failed assertion breaks once.
++    assert run(test_exe, "[.debug-break-flaky]", 42, "--break") == [
++        "debug-break",
++        "test-case-ended attempts=1/1 flaky=false",
++    ]
++    assert run(
++        test_exe, "[.debug-break-flaky]", 42, "--break", "--retry-failed", "0"
++    ) == [
++        "debug-break",
++        "test-case-ended attempts=1/1 flaky=false",
++    ]
++
++    # The failed assertion of the superseded attempt breaks inside that
++    # attempt; the passing retry does not break.
++    assert run(
++        test_exe, "[.debug-break-flaky]", 0, "--break", "--retry-failed", "2"
++    ) == [
++        "attempt-starting 1/3",
++        "debug-break",
++        "attempt-ended 1/3 retry",
++        "attempt-starting 2/3",
++        "attempt-ended 2/3 final",
++        "test-case-ended attempts=2/3 flaky=true",
++    ]
++
++    # Every failed assertion of every attempt breaks.
++    assert run(
++        test_exe, "[.debug-break-always]", 42, "--break", "--retry-failed", "1"
++    ) == [
++        "attempt-starting 1/2",
++        "debug-break",
++        "debug-break",
++        "attempt-ended 1/2 retry",
++        "attempt-starting 2/2",
++        "debug-break",
++        "debug-break",
++        "attempt-ended 2/2 final",
++        "test-case-ended attempts=2/2 flaky=false",
++    ]
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/tests/TestScripts/testRetryFailedFatal.py b/tests/TestScripts/testRetryFailedFatal.py
+index 0273985c..242022f4 100644
+--- a/tests/TestScripts/testRetryFailedFatal.py
++++ b/tests/TestScripts/testRetryFailedFatal.py
+@@ -10,16 +10,191 @@
+ """Checks retry attempt events on Catch2's fatal-error path."""
+ 
+ from pathlib import Path
++import re
+ import subprocess
+ import sys
+ import tempfile
++import time
+ import xml.etree.ElementTree as ET
+ 
++# Every child process dies from a fatal signal or structured exception. On
++# Windows the operating system's crash handling can take several seconds
++# under load, so the timeout only guards against a hung child.
++CHILD_TIMEOUT_SECONDS = 120
++
++# Reporters whose fatal-path output must not change when retries are enabled
++# but the fatal attempt ends the run.
++UNCHANGED_FATAL_REPORTERS = (
++    "console",
++    "compact",
++    "TAP",
++    "TeamCity",
++    "SonarQube",
++    "Automake",
++)
++
+ 
+ def event_lines(output, prefix):
+     return [line for line in output.splitlines() if line.startswith(prefix)]
+ 
+ 
++def run_fatal_child(command):
++    started = time.monotonic()
++    try:
++        result = subprocess.run(
++            command,
++            stdout=subprocess.PIPE,
++            stderr=subprocess.PIPE,
++            timeout=CHILD_TIMEOUT_SECONDS,
++            check=False,
++            universal_newlines=True,
++        )
++    except subprocess.TimeoutExpired as error:
++        raise AssertionError(
++            "Fatal child did not exit within {} seconds:\n{}\n"
++            "stdout so far:\n{}\nstderr so far:\n{}".format(
++                CHILD_TIMEOUT_SECONDS, command, error.stdout, error.stderr
++            )
++        )
++    elapsed = time.monotonic() - started
++    print("{:.2f} s: {}".format(elapsed, " ".join(command[1:])))
++    assert result.returncode != 0, (
++        "Fatal child unexpectedly exited successfully:\n{}".format(command)
++    )
++    return result
++
++
++def normalize_timing(output):
++    output = re.sub(r'time="[^"]*"', 'time=""', output)
++    output = re.sub(r'timestamp="[^"]*"', 'timestamp=""', output)
++    output = re.sub(r"duration='[^']*'", "duration=''", output)
++    return output
++
++
++def fatal_reporter_output(test_exe, output_dir, reporter, retry_arguments):
++    output_path = output_dir / "fatal-{}-{}.txt".format(
++        reporter, "retry" if retry_arguments else "zero"
++    )
++    command = [
++        test_exe,
++        "[.retry-fatal]",
++        "--rng-seed",
++        "1",
++        "--colour-mode",
++        "none",
++        *retry_arguments,
++        "--reporter",
++        "{}::out={}".format(reporter, output_path),
++    ]
++    result = run_fatal_child(command)
++    output = (
++        output_path.read_text(encoding="utf-8")
++        if output_path.exists()
++        else ""
++    )
++    return result.returncode, output
++
++
++def strip_json_attempt_data(output):
++    """Removes the keys that retries add to JSON output.
++
++    The JSON reporter in v3.16.0 leaves its document unfinished on the
++    fatal path, so the output cannot be parsed; it is compared line by line
++    instead, ignoring trailing commas that depend on the removed keys.
++    """
++    lines = output.splitlines()
++    kept = []
++    index = 0
++    while index < len(lines):
++        line = lines[index]
++        if re.fullmatch(r'\s*"attempt": \d+,?', line):
++            index += 1
++            continue
++        if re.fullmatch(r'\s*"attempts": \{', line):
++            depth = 0
++            while True:
++                depth += lines[index].count("{") - lines[index].count("}")
++                index += 1
++                if depth == 0:
++                    break
++            continue
++        kept.append(line.rstrip(","))
++        index += 1
++    return kept
++
++
++def check_fatal_reporters(test_exe, output_dir):
++    for reporter in UNCHANGED_FATAL_REPORTERS:
++        zero_code, zero_output = fatal_reporter_output(
++            test_exe, output_dir, reporter, ()
++        )
++        retry_code, retry_output = fatal_reporter_output(
++            test_exe, output_dir, reporter, ("--retry-failed", "2")
++        )
++        assert retry_code == zero_code, (reporter, zero_code, retry_code)
++        assert normalize_timing(retry_output) == normalize_timing(
++            zero_output
++        ), (
++            "{} fatal-path output changed with --retry-failed 2\n"
++            "without retries:\n{}\nwith retries:\n{}".format(
++                reporter, zero_output, retry_output
++            )
++        )
++
++    zero_code, zero_json = fatal_reporter_output(
++        test_exe, output_dir, "JSON", ()
++    )
++    retry_code, retry_json = fatal_reporter_output(
++        test_exe, output_dir, "JSON", ("--retry-failed", "2")
++    )
++    assert retry_code == zero_code, (zero_code, retry_code)
++    assert strip_json_attempt_data(retry_json) == [
++        line.rstrip(",") for line in zero_json.splitlines()
++    ], (
++        "JSON fatal-path output differs beyond the attempt data\n"
++        "without retries:\n{}\nwith retries:\n{}".format(
++            zero_json, retry_json
++        )
++    )
++    if retry_json:
++        assert '"attempt": 1' in retry_json, retry_json
++        assert '"used": 1' in retry_json and '"max": 3' in retry_json
++
++    zero_code, zero_xml = fatal_reporter_output(
++        test_exe, output_dir, "XML", ()
++    )
++    retry_code, retry_xml = fatal_reporter_output(
++        test_exe, output_dir, "XML", ("--retry-failed", "2")
++    )
++    assert retry_code == zero_code, (zero_code, retry_code)
++    zero_root = ET.fromstring(zero_xml)
++    retry_root = ET.fromstring(retry_xml)
++    assert len(zero_root.findall(".//FatalErrorCondition")) == 1, zero_xml
++    assert len(retry_root.findall(".//FatalErrorCondition")) == 1, retry_xml
++    attempts = retry_root.findall("./TestCase/Attempt")
++    assert len(attempts) == 1, retry_xml
++    assert attempts[0].get("number") == "1", retry_xml
++    assert attempts[0].get("maxAttempts") == "3", retry_xml
++    attempt_results = attempts[0].findall("./AttemptResult")
++    assert len(attempt_results) == 1, retry_xml
++    assert attempt_results[0].get("success") == "false", retry_xml
++    assert attempt_results[0].get("final") == "true", retry_xml
++    overall = retry_root.find("./TestCase/OverallResult")
++    assert overall is not None, retry_xml
++    assert overall.get("success") == "false", retry_xml
++    assert overall.get("attempts") == "1", retry_xml
++    assert overall.get("flaky") == "false", retry_xml
++    for tag in ("OverallResults", "OverallResultsCases"):
++        zero_totals = zero_root.find("./" + tag)
++        retry_totals = retry_root.find("./" + tag)
++        assert zero_totals is not None and retry_totals is not None, tag
++        assert zero_totals.attrib == retry_totals.attrib, (
++            tag,
++            zero_totals.attrib,
++            retry_totals.attrib,
++        )
++
++
+ def main():
+     test_exe, = sys.argv[1:]
+     command = [
+@@ -32,17 +207,7 @@ def main():
+         "--colour-mode",
+         "none",
+     ]
+-    result = subprocess.run(
+-        command,
+-        stdout=subprocess.PIPE,
+-        stderr=subprocess.PIPE,
+-        timeout=20,
+-        check=False,
+-        universal_newlines=True,
+-    )
+-    assert result.returncode != 0, (
+-        "Fatal child unexpectedly exited successfully:\n{}".format(command)
+-    )
++    result = run_fatal_child(command)
+ 
+     output = result.stdout
+     starts = event_lines(output, "test-case-attempt-starting ")
+@@ -83,19 +248,7 @@ def main():
+             "--colour-mode",
+             "none",
+         ]
+-        junit_result = subprocess.run(
+-            junit_command,
+-            stdout=subprocess.PIPE,
+-            stderr=subprocess.PIPE,
+-            timeout=20,
+-            check=False,
+-            universal_newlines=True,
+-        )
+-        assert junit_result.returncode != 0, (
+-            "Fatal JUnit child unexpectedly exited successfully:\n{}".format(
+-                junit_command
+-            )
+-        )
++        run_fatal_child(junit_command)
+         junit_output = junit_path.read_text(encoding="utf-8")
+         junit_root = ET.fromstring(junit_output)
+         assert junit_root.tag == "testsuites", junit_output
+@@ -104,6 +257,8 @@ def main():
+         assert len(suites[0].findall(".//error")) == 1, junit_output
+         assert "Attempt 2 of 3" not in junit_output, junit_output
+ 
++        check_fatal_reporters(test_exe, Path(temp_dir))
++
+ 
+ if __name__ == "__main__":
+     sys.exit(main())
+-- 
+2.56.0.windows.1
+

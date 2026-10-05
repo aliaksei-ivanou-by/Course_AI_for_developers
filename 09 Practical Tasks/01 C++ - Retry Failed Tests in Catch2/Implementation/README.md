@@ -159,10 +159,10 @@ Update this table as work progresses. A phase is complete only after its gate pa
 | 3. Specify and clarify behavior | `artifacts/03-spec.md`, `04-clarifications.md` | Complete — accepted |
 | 4. Create and review the technical plan | `artifacts/05-plan.md`, `07-decisions.md` | Complete — approved |
 | 5. Decompose into verifiable tasks | `artifacts/06-tasks.md` | Complete — approved |
-| 6. Implement in small tested slices | Catch2 commits and task evidence | Complete — T00–T14 done (see `artifacts/06-tasks.md`) |
-| 7. Review with fresh context | `artifacts/08-review.md` | Complete — all findings resolved; evidence recorded |
-| 8. Run full validation and convergence | `artifacts/09-validation.md` | Complete — basic 92/92, all 157/157; final retry-fatal rerun passed |
-| 9. Prepare the handoff and reflect | patch, implementation notes, `10-retrospective.md` | Complete — reviewed and committed as `6803125`; 19-patch series reproduces the validated branch |
+| 6. Implement in small tested slices | Catch2 commits and task evidence | Complete — T00–T15 done (see `artifacts/06-tasks.md`) |
+| 7. Review with fresh context | `artifacts/08-review.md` | Complete — all findings resolved, including follow-up L-2 – L-4; three of four verification gaps closed by T15 |
+| 8. Run full validation and convergence | `artifacts/09-validation.md` | Complete — basic 92/92, all 158/158; `RetryFailed::Fatal` 10/10 repeated runs |
+| 9. Prepare the handoff and reflect | patch, implementation notes, `10-retrospective.md` | Complete — handoff committed as `6803125`, follow-up T15 added; 22-patch series reproduces the validated branch |
 
 ## Phase 0: Frame the Work and Establish Safety
 
@@ -605,6 +605,7 @@ The workthrough is complete only when all of the following are true:
 
 ## Current Status and Next Step
 
-Phases 0–9 are complete. The course handoff is committed as `6803125`, and
-Catch2 is reproducible from `v3.16.0` with the 19 exported patches. No push or
-external publication was made.
+Phases 0–9 are complete. The course handoff is committed as `6803125`; the
+follow-up task T15 closed three review verification gaps. Catch2 is
+reproducible from `v3.16.0` with the 22 exported patches. Catch2 itself has no
+remote; the course repository is published by the reviewer.

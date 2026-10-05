@@ -1,7 +1,5 @@
 # Phase 9 Retrospective
 
-Date: 2026-10-05
-
 ## Plan and design
 
 The initial plan was right to put retries around a complete logical test-case attempt and to keep attempt events separate from the ordinary test-case lifecycle. Fresh tracker state, fixture reconstruction, counter restoration, and final-only totals were all necessary to make a retry behave like a new execution without duplicating the logical test case.
@@ -26,16 +24,21 @@ The review found five reporter defects: machine-readable reporters could represe
 
 Repeated full-suite runs added confidence after each reporter change, but their evidence was initially scattered across review notes. Regenerating the amalgamated files also changed only timestamp comments on a repeat run, which created noise without changing generated content. The final validation record now gathers the commands, outcomes, timeout, and patch-series result in one place.
 
+## Follow-up after the handoff
+
+The review listed verification gaps but did not require closing them before the handoff. Closing three of them afterwards (T15) found two small reporter defects and one inaccurate documentation statement, and the timings it recorded suggest that the earlier fatal-test timeout came from Windows crash handling under parallel load rather than from a hang. Untested areas named in a review are worth closing before the handoff, not only recording.
+
 ## Improvements for the next task
 
 1. Add parser-level reporter checks to the plan as soon as semantic outcome rules are defined, including special tags, missing assertions, multiple assertions per case, and final skips.
 2. Record each validation command and result as it runs, and isolate signal-dependent tests immediately when a full parallel run times out.
+3. Treat each verification gap from the review as a task with its own test before the handoff, and confirm with a deliberate regression that the new test can fail.
 
 ## Reproduction
 
 - Catch2 branch: `task/retry-failed`
-- Catch2 commit: `a95e3dd10ab0bdbe994152b59152cf220ddb3028`
-- Baseline: `v3.16.0`
-- Exported patches: `patches/0001` through `patches/0019`
+- Catch2 handoff commit: `a95e3dd10ab0bdbe994152b59152cf220ddb3028`; follow-up tree `9b5d39ece8842becb9e2dcf049b0b4f797897a82`
+- Baseline: `v3.16.0` (commit `317ac1ed4c0bb6e6b91eafc817e05c488feffcb3`)
+- Exported patches: `patches/0001` through `patches/0022`
 - Validation: [09-validation.md](09-validation.md)
 - Proposed course handoff commit message, after review: `Record retry-failed implementation and validation handoff`

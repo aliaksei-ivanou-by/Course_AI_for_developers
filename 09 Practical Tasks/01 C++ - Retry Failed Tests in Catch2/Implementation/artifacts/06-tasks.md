@@ -195,6 +195,16 @@ There is no cycle. T00, T01, and T02 touch disjoint files and can be done in any
 - **Evidence:** `IMPLEMENTATION_NOTES.md` contains exactly nine numbered sections matching the assignment: execution design; retry decision/final outcome; tracker, generator, fixture, output, and assertion reset; intermediate diagnostics versus final totals; reporter API and compatibility; abort options and special tags; main files; commands/results; and limitations. A focused checklist passed **9/9**; all 22 specifically referenced source, test, documentation, and amalgamated files exist. Content checks against the final code confirmed the retry condition, assertion-counter restoration, both attempt events, and the compatible `IConfig::retryFailed() == 0` default. The note records the actual baseline and final fresh Windows commands and results (82/82 → 92/92 basic, 145/145 → 157/157 all, focused 2/2 and 3/3, no approval differences, and only the four baseline `D9025` warnings), as well as the diagnosed amalgamation collision and disk-full rerun. `git diff --check` passed. No build was repeated because T14 changes documentation only and depends on T13's fresh full regression. Commit in `workspace/Catch2`: `9037e6faa6638b160d2f24e240f6b671d979c99d` "Add retry-failed implementation notes". Patch: `patches/0014-Add-retry-failed-implementation-notes.patch`; `git am` of `0001`–`0014` on a clean `v3.16.0` gives tree `a9eeafdbff7ffa294cdcaab8dcdf95356e1778e0`, identical to the final branch.
 - **Independent:** no.
 
+### [x] T15 — Close review verification gaps
+
+- **Outcome:** the verification gaps listed in `08-review.md` for nested-section missing assertions, the fatal-error path of every built-in reporter, and debugger breaks have automated tests; defects found by the new tests are fixed; the earlier `RetryFailed::Fatal` timeout is hardened against; the reporter guide is corrected.
+- **Files:** `src/catch2/reporters/catch_reporter_tap.cpp`, `catch_reporter_junit.cpp`, `catch_reporter_sonarqube.cpp`, `extras/catch_amalgamated.*`, `tests/ExtraTests/X96-RetryFailed.cpp`, `tests/ExtraTests/X97-RetryFailedDebugBreak.cpp`, `tests/ExtraTests/CMakeLists.txt` (`RetryFailed::DebugBreak`; `RUN_SERIAL` and `TIMEOUT` for `RetryFailed::Fatal`), `tests/TestScripts/testRetryFailed.py`, `testRetryFailedFatal.py`, `testRetryFailedDebugBreak.py`, `docs/reporters.md`, `IMPLEMENTATION_NOTES.md`.
+- **Depends on:** T14 and the Phase 7 review.
+- **Focused tests:** nested leaf section without assertions, exhausted and fail-then-pass, for the recorder, JUnit, SonarQube, TeamCity, and TAP; fatal-path output of console, compact, TAP, TeamCity, SonarQube, and Automake identical with and without `--retry-failed 2`, JSON identical apart from the attempt keys, XML and JUnit parsed; `--break` breaks once per failed assertion of every attempt, inside that attempt, and not without `--break`.
+- **Covers:** CO-6, E-7, E-8, R-5; review findings L-2 – L-4.
+- **Evidence:** Linux (GCC, development build): `basic-tests` 91/91; the four retry extra tests 4/4; a deliberate regression that suppressed breaks with retries failed `RetryFailed::DebugBreak`, and the original JUnit and SonarQube message failed the nested-section scenario. A pristine `v3.16.0` build confirmed that JSON and Automake write nothing to stdout on the fatal path without retries. Windows `T15-run-01-basic`: HEAD `a95e3dd1…`, diff limited to the task files (11 changed, 2 new; 548 insertions, 59 deletions); 0 warnings; focused 2/2; **92/92**; no `*.unapproved.txt`. Windows `T15-run-02-all`: 4 baseline `D9025` warnings; focused 15/15; **158/158**; no `*.unapproved.txt`. `RetryFailed::Fatal --repeat until-fail:10`: 10/10, 43–63 s per run. Commits in `workspace/Catch2`: "Report nested missing assertions once per attempt", "Cover fatal reporters and debugger breaks with retries", and "Document retry-enabled reporter output and follow-up validation", exported as patches `0020`–`0022`; `git am` of `0001`–`0022` on a clean `v3.16.0` gives tree `9b5d39ece8842becb9e2dcf049b0b4f797897a82`.
+- **Independent:** no.
+
 ## Coverage
 
 ### Specification requirements
@@ -209,7 +219,7 @@ There is no cycle. T00, T01, and T02 touch disjoint files and can be done in any
 | S-1 – S-7, S-9 | T05 |
 | S-8 | T10 |
 | E-1 – E-6, E-8 | T05 |
-| E-7 | T06 (abort), T07 (fatal) |
+| E-7 | T06 (abort), T07 (fatal), T15 (fatal path of every reporter) |
 | E-9 | T02, T03, T05 |
 | §5.2 console, compact | T08 |
 | §5.2 XML, JSON | T09 |
@@ -221,7 +231,7 @@ There is no cycle. T00, T01, and T02 touch disjoint files and can be done in any
 | CO-1 | T03, T04, T13 |
 | CO-2, CO-3 | T02, T03, T05 |
 | CO-4, CO-5 | T06 |
-| CO-6 | T05 (review) |
+| CO-6 | T05 (review), T15 (`RetryFailed::DebugBreak`) |
 | CO-7 | T05 |
 | Documentation (spec §10) | T12 |
 | `IMPLEMENTATION_NOTES.md` | T14 |

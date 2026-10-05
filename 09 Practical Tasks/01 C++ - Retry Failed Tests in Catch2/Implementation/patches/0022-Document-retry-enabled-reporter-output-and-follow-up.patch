@@ -1,0 +1,149 @@
+From d3125f4b5fb591b359facb64903e29cef86f807d Mon Sep 17 00:00:00 2001
+From: Aliaksei Ivanou <aliaksei.ivanou@innowise.com>
+Date: Mon, 5 Oct 2026 09:47:20 +0200
+Subject: [PATCH] Document retry-enabled reporter output and follow-up
+ validation
+
+List every reporter representation that applies when retries are enabled but a test case runs once, including JUnit's logical-case counters, and record the follow-up coverage, limitations, and validation results in the implementation notes.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01GunDRycct3rWzK5p7dpZxP
+---
+ IMPLEMENTATION_NOTES.md | 66 +++++++++++++++++++++++++++++++++++++++--
+ docs/reporters.md       | 21 +++++++++----
+ 2 files changed, 80 insertions(+), 7 deletions(-)
+
+diff --git a/IMPLEMENTATION_NOTES.md b/IMPLEMENTATION_NOTES.md
+index d728f430..959834b9 100644
+--- a/IMPLEMENTATION_NOTES.md
++++ b/IMPLEMENTATION_NOTES.md
+@@ -131,8 +131,10 @@ threshold is one.
+   compact, XML, JSON, JUnit, SonarQube, TeamCity, and TAP reporters preserve
+   intermediate diagnostics while reporting the final outcome correctly.
+ - Tests: `tests/ExtraTests/X96-RetryFailed.cpp`,
++  `tests/ExtraTests/X97-RetryFailedDebugBreak.cpp`,
+   `tests/TestScripts/testRetryFailed.py`,
+-  `tests/TestScripts/testRetryFailedFatal.py`, `tests/CMakeLists.txt`,
++  `tests/TestScripts/testRetryFailedFatal.py`,
++  `tests/TestScripts/testRetryFailedDebugBreak.py`, `tests/CMakeLists.txt`,
+   `tests/ExtraTests/CMakeLists.txt`, and focused SelfTest cases provide CLI,
+   lifecycle, state, reporter, fatal-path, and compatibility coverage.
+ - Documentation: `docs/command-line.md`, `docs/reporter-events.md`,
+@@ -208,7 +210,7 @@ Finally, `git diff --check`, `git status --short`, and a clean application of
+ the patch series to `v3.16.0` were checked. Before this documentation-only
+ file was added, the reproduced tree was identical to the validated branch.
+ 
+-### Post-review reporter fixes — 2026-10-05
++### Post-review reporter fixes
+ 
+ The fresh-context review identified reporter edge cases after the original
+ T13/T14 validation. They were fixed in separate commits:
+@@ -228,6 +230,57 @@ baselines were produced; the only build warnings were the four known MSVC
+ All 18 exported patches applied to a clean `v3.16.0` worktree and produced
+ tree `8c8ac8df7cde538ceeb80dd299baec31103bf847`, matching commit `30ab6617`.
+ 
++### Follow-up coverage
++
++Three areas that the review listed as unverified now have automated checks:
++
++- Missing assertions in a nested leaf section, exhausted and fail-then-pass,
++  for the recorder, JUnit, SonarQube, TeamCity, and TAP. The new checks found
++  two defects, both fixed: TAP repeated the `Attempt k of M failed:` heading
++  for every diagnostic of a superseded attempt instead of writing it once,
++  and JUnit and SonarQube labelled a missing-assertion failure in a section
++  as `no assertions in test case`; they now say `no assertions in section`.
++- The fatal-error path for every built-in reporter. Console, compact, TAP,
++  TeamCity, SonarQube, and Automake output is identical with and without
++  `--retry-failed 2`; JSON differs only by the attempt keys; XML parses and
++  contains one final attempt; JUnit parses and counts the fatal error once.
++- `--break` with retries, through `RetryFailed::DebugBreak`. The binary is
++  built from the amalgamated sources with a recording
++  `CATCH_BREAK_INTO_DEBUGGER`, because the break happens inside the library.
++  Every failed assertion breaks, including those of superseded attempts, and
++  the break happens inside its attempt.
++
++`RetryFailed::Fatal` now runs serially, waits up to 120 seconds for each
++crashing child instead of 20, and prints how long each child took. Its single
++earlier timeout on Windows was not reproduced and its cause is unknown.
++
++The amalgamated sources were regenerated with
++`python3 tools/scripts/generateAmalgamatedFiles.py` on Linux, where the
++changes were first built with GCC in a development build (`basic-tests` 91/91;
++`RetryFailed::Scenarios`, `RetryFailed::Fatal`, `RetryFailed::DebugBreak`,
++and `AmalgamatedFileTest` 4/4). The changes were then validated on Windows
++with the existing incremental build trees:
++
++```powershell
++cmake -B C:\build\Course_AI\catch2\basic-test-build -S . -DCMAKE_BUILD_TYPE=Debug --preset basic-tests
++cmake --build C:\build\Course_AI\catch2\basic-test-build --config Debug --parallel
++ctest --test-dir C:\build\Course_AI\catch2\basic-test-build -C Debug --output-on-failure -R 'RunTests|ApprovalTests'
++ctest --test-dir C:\build\Course_AI\catch2\basic-test-build -C Debug --output-on-failure
++cmake -B C:\build\Course_AI\catch2\debug-build -S . -DCMAKE_BUILD_TYPE=Debug --preset all-tests
++cmake --build C:\build\Course_AI\catch2\debug-build --config Debug --parallel
++ctest --test-dir C:\build\Course_AI\catch2\debug-build -C Debug --output-on-failure -R 'RetryFailed::|AmalgamatedFileTest|ApprovalTests'
++ctest --test-dir C:\build\Course_AI\catch2\debug-build -C Debug --output-on-failure -j 4
++ctest --test-dir C:\build\Course_AI\catch2\debug-build -C Debug -R 'RetryFailed::Fatal' --repeat until-fail:10 --output-on-failure
++```
++
++Results: `basic-tests` 92/92 and focused 2/2 with no build warnings;
++`all-tests` 158/158 (157 earlier tests plus `RetryFailed::DebugBreak`) and
++focused 15/15, with only the four baseline `D9025` warnings; no
++`*.unapproved.txt` files. `RetryFailed::Fatal` passed 10 of 10 repeated runs,
++taking 43 to 63 seconds for its 18 crashing children. On Linux the same test
++takes under a second, which suggests that most of the Windows time is spent
++in the operating system's crash handling.
++
+ ## 9. Known limitations and unsupported cases
+ 
+ - Catch2 does not roll back test-owned or external state: globals, statics,
+@@ -236,6 +289,15 @@ tree `8c8ac8df7cde538ceeb80dd299baec31103bf847`, matching commit `30ab6617`.
+ - A fatal signal, structured exception, stack overflow, forced termination,
+   or process crash cannot be recovered and retried. Catch2 only performs
+   best-effort balanced reporting before the existing termination behavior.
++  As in `v3.16.0`, the JSON reporter leaves its document unfinished on this
++  path, and JSON and Automake write nothing when their output goes to stdout;
++  retries do not change this.
++- With retries disabled, `v3.16.0` does not report a leaf section without
++  assertions under `-w NoAssertions` as a failure in JUnit, TeamCity, or TAP,
++  although the test case fails: JUnit has no failure element, TeamCity emits
++  no `testFailed`, and the TAP plan names one more point than it emits. This
++  zero-retry output is kept unchanged for compatibility; with retries
++  enabled, the failure is reported.
+ - Retries are sequential. There is no delay/backoff, parallel retry
+   scheduling, persistence across process launches, or retry-only filter.
+ - The unit of retry is the whole logical test case. Individual assertions,
+diff --git a/docs/reporters.md b/docs/reporters.md
+index f47e66f9..019fffd2 100644
+--- a/docs/reporters.md
++++ b/docs/reporters.md
+@@ -49,11 +49,22 @@ representations are:
+ | TAP | Writes superseded assertions as `#` diagnostic lines that do not consume test-point numbers. Assertions from the final attempt are the numbered test points and determine the plan. |
+ | Automake | Writes one result line for the logical test case, based on its final outcome. |
+ 
+-With retries disabled, reporter output is unchanged. With retries enabled but
+-unused, XML and JSON add structural attempt information. Accepted failures
+-(`[!mayfail]` or an expected failure under `[!shouldfail]`) are represented
+-as skipped in JUnit and marked `TODO` in TAP, even when no additional attempt
+-runs. TAP buffers its own lines until an attempt ends, so those lines can
++With retries disabled, reporter output is unchanged. With retries enabled,
++these representations apply even to a test case that runs only once:
++
++* XML and JSON add structural attempt information.
++* JUnit's suite `tests`, `failures`, `errors`, and `skipped` attributes count
++  logical test cases instead of assertions, so a test case with several
++  assertions counts once and a fatal error counts as an error.
++* Accepted failures (`[!mayfail]` or an expected failure under
++  `[!shouldfail]`) are represented as skipped in JUnit and marked `TODO` in
++  TAP.
++* JUnit, SonarQube, TeamCity, and TAP report failures that have no failed
++  assertion, such as a test case or leaf section without assertions under
++  `-w NoAssertions`, or an unexpected pass under `[!shouldfail]`, as failures
++  with their reason.
++
++TAP buffers its own lines until an attempt ends, so those lines can
+ interleave differently with output written directly by the test.
+ 
+ Custom reporters can observe attempts through the
+-- 
+2.56.0.windows.1
+

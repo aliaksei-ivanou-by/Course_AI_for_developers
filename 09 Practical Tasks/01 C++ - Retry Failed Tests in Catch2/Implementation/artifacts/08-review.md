@@ -1,30 +1,18 @@
 # Phase 7 Fresh-Context Review
 
-Date: 2026-10-04
-
-Resolution date: 2026-10-05
-
-Second review date: 2026-10-05
-
-H-2 resolution date: 2026-10-05
-
-M-2 resolution date: 2026-10-05
-
-M-3 resolution date: 2026-10-05
-
-L-1 resolution date: 2026-10-05
-
 Reviewed Catch2 revision: `9037e6faa6638b160d2f24e240f6b671d979c99d`
 
 Resolved Catch2 revision: `b19a1b75c19b6f85d438e0653855a20f6d5ef95d`
 
-Current Catch2 revision: `a95e3dd10ab0bdbe994152b59152cf220ddb3028`
+Handoff Catch2 revision: `a95e3dd10ab0bdbe994152b59152cf220ddb3028`
 
-Baseline: `v3.16.0` (`fd79eadb5bc1760e7cbae12fd45b0d0040d1bb73`)
+Follow-up Catch2 tree: `9b5d39ece8842becb9e2dcf049b0b4f797897a82` (patches `0020`–`0022`, task T15)
+
+Baseline: `v3.16.0` (commit `317ac1ed4c0bb6e6b91eafc817e05c488feffcb3`; annotated tag object `fd79eadb5bc1760e7cbae12fd45b0d0040d1bb73`)
 
 ## Gate Status
 
-**Passed.** H-1, M-1, H-2, M-2, M-3, and L-1 are resolved. The reporter documentation now describes accepted-failure output when retries are enabled but no retry occurs, and the implementation notes include the post-review fixes and final validation results.
+**Passed.** H-1, M-1, H-2, M-2, M-3, L-1, and the follow-up findings L-2, L-3, and L-4 are resolved. The reporter documentation describes retry-enabled output when no retry occurs, and the implementation notes include the post-review fixes, the follow-up coverage, and their validation results. Three of the four verification gaps are closed by automated tests (T15); the remaining gap and a preserved `v3.16.0` limitation are recorded below.
 
 ## Findings
 
@@ -176,14 +164,42 @@ A single deterministic test containing three final `CHECK(false)` assertions, ru
 
 **Resolution:** `docs/reporters.md` now states that accepted failures (`[!mayfail]` and expected-failing `[!shouldfail]`) appear as skipped in JUnit and `TODO` in TAP when retrying is enabled, even if no further attempt runs. `IMPLEMENTATION_NOTES.md` records the post-review commits, focused and full test totals, build warnings, and clean-base patch-tree verification.
 
+### L-2 — TAP repeats the attempt heading for every superseded diagnostic
+
+**Severity:** Low
+
+**Status:** Resolved
+
+Found by the T15 nested-section scenario. For a superseded attempt with a passing assertion and a missing-assertion section, TAP wrote `# Attempt 1 of 2 failed:` once before each diagnostic. **Resolution:** the heading is written once per superseded attempt, before all of its diagnostics; the nested scenarios require exactly one heading.
+
+### L-3 — JUnit and SonarQube label a missing-assertion section as a test case
+
+**Severity:** Low
+
+**Status:** Resolved
+
+Found by the same scenario. The failure text correctly said `No assertions in section 'inner without assertion'`, but the `message` attribute said `no assertions in test case`. **Resolution:** the message is `no assertions in section` when the test case itself had assertions, and stays `no assertions in test case` otherwise. The new check failed before the fix and passes after it.
+
+### L-4 — Reporter documentation omits JUnit counter changes when retries are unused
+
+**Severity:** Low
+
+**Status:** Resolved
+
+`docs/reporters.md` listed only XML, JSON, and accepted failures as differing when retries are enabled but no retry occurs. With retries enabled, JUnit suite counters count logical test cases instead of assertions (for example `tests="1"` instead of `tests="3"` for one test case with three passing assertions), and a fatal error counts as an error. **Resolution:** the documentation lists every retry-enabled representation that also applies to a test case that runs once.
+
 ## Verification Gaps
 
-- The deterministic unexpected-pass-to-accepted-`[!shouldfail]` transition is now covered by the recorder and both human-readable reporters, but not by every machine-readable reporter.
-- Exhausted and fail-then-pass `NoAssertions` paths are now parser/protocol-tested in JUnit, SonarQube, TeamCity, and TAP. Nested-section missing-assertion combinations remain outside the focused matrix.
-- Retried logical test cases ending as skipped or accepted failure are now covered directly for console and compact.
-- Retry-enabled JUnit suite counts now cover multi-assertion pass and failure cases, as well as final exception classification. Zero-retry counter behavior remains on the legacy path.
-- Fatal-path structure is parser-tested only for JUnit. During review, XML output from the fatal fixture remained well-formed; JSON and Automake wrote no stdout before Windows terminated the process. This was not classified as a defect because fatal reporting is explicitly best-effort and the review did not establish a regression from `v3.16.0`, but it remains an unverified compatibility area.
-- Debugger-break preservation (`CO-6`) is supported only by code-path inspection; there is no automated debugger integration test.
+Closed by the follow-up task T15:
+
+- Missing assertions in a nested leaf section, exhausted and fail-then-pass, are now covered for the recorder, JUnit, SonarQube, TeamCity, and TAP. The new checks found L-2 and L-3.
+- The fatal-error path is now covered for every built-in reporter. Console, compact, TAP, TeamCity, SonarQube, and Automake output is identical with and without `--retry-failed 2`; JSON differs only by the attempt keys; XML and JUnit are parsed. On a pristine `v3.16.0` build, JSON and Automake also write nothing to stdout on this path, and JSON leaves its document unfinished when writing to a file, so this is existing behaviour, not a regression.
+- Debugger-break preservation (`CO-6`) is now covered by `RetryFailed::DebugBreak`, which builds against the amalgamated sources with a recording `CATCH_BREAK_INTO_DEBUGGER`: every failed assertion breaks, including those of superseded attempts, and each break happens inside its attempt. The test failed as expected against a deliberately broken runner that suppressed breaks when retries were enabled.
+
+Still open:
+
+- The deterministic unexpected-pass-to-accepted-`[!shouldfail]` transition is covered by the recorder and both human-readable reporters, but not by every machine-readable reporter.
+- With retries disabled, `v3.16.0` itself does not report a leaf section without assertions as a failure in JUnit, TeamCity, or TAP, and its TAP plan then names one point more than it emits. This zero-retry behaviour is preserved for compatibility and recorded as a limitation in `IMPLEMENTATION_NOTES.md`.
 
 ## Test-Quality Assessment
 
@@ -225,3 +241,6 @@ The first review found that reporter cases used ordinary failed assertions while
 | M-2 | Resolved in `5669b8e6` (`0017-Report-final-retry-outcomes-in-human-reporters.patch`) | Recorder totals and direct console/compact output checks cover final skip and accepted failure; focused group 5/5; all preset 157/157; basic preset 92/92 |
 | M-3 | Resolved in `30ab6617` (`0018-Count-logical-retry-results-in-JUnit-suites.patch`) | JUnit parser checks cover three-assertion pass/failure and final exception; focused group 5/5; all preset 157/157; basic preset 92/92; 18-patch clean-base application matches tree `8c8ac8df` |
 | L-1 | Resolved in `a95e3dd1` (`0019-Document-accepted-retry-outcomes-and-final-validation.patch`) | Reporter guide describes accepted failures with unused retries; implementation notes record post-review fixes and exact validation; 19-patch clean-base application matches tree `42faf819` |
+| L-2 | Resolved in follow-up patch `0020` | Nested-section TAP scenarios require one heading per superseded attempt; `all` 158/158 |
+| L-3 | Resolved in follow-up patch `0020` | Nested-section JUnit and SonarQube scenarios check the message; the check failed before the fix; `all` 158/158 |
+| L-4 | Resolved in follow-up patch `0022` | Reporter guide lists JUnit counters, accepted failures, and assertion-free failures for retry-enabled output |
