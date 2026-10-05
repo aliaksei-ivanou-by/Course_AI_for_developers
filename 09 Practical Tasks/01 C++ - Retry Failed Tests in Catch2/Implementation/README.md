@@ -161,7 +161,7 @@ Update this table as work progresses. A phase is complete only after its gate pa
 | 5. Decompose into verifiable tasks | `artifacts/06-tasks.md` | Complete — approved |
 | 6. Implement in small tested slices | Catch2 commits and task evidence | Complete — T00–T14 done (see `artifacts/06-tasks.md`) |
 | 7. Review with fresh context | `artifacts/08-review.md` | Complete — all findings resolved; evidence recorded |
-| 8. Run full validation and convergence | `artifacts/09-validation.md` | Not started |
+| 8. Run full validation and convergence | `artifacts/09-validation.md` | Complete — basic 92/92, all 157/157; final retry-fatal rerun passed |
 | 9. Prepare the handoff and reflect | patch, implementation notes, `10-retrospective.md` | Not started |
 
 ## Phase 0: Frame the Work and Establish Safety
