@@ -1,0 +1,63 @@
+From a95e3dd10ab0bdbe994152b59152cf220ddb3028 Mon Sep 17 00:00:00 2001
+From: Aliaksei Ivanou <aliaksei.ivanou@innowise.com>
+Date: Mon, 5 Oct 2026 08:46:03 +0200
+Subject: [PATCH] Document accepted retry outcomes and final validation
+
+---
+ IMPLEMENTATION_NOTES.md | 20 ++++++++++++++++++++
+ docs/reporters.md       |  8 +++++---
+ 2 files changed, 25 insertions(+), 3 deletions(-)
+
+diff --git a/IMPLEMENTATION_NOTES.md b/IMPLEMENTATION_NOTES.md
+index feaa0c23..d728f430 100644
+--- a/IMPLEMENTATION_NOTES.md
++++ b/IMPLEMENTATION_NOTES.md
+@@ -208,6 +208,26 @@ Finally, `git diff --check`, `git status --short`, and a clean application of
+ the patch series to `v3.16.0` were checked. Before this documentation-only
+ file was added, the reproduced tree was identical to the validated branch.
+ 
++### Post-review reporter fixes — 2026-10-05
++
++The fresh-context review identified reporter edge cases after the original
++T13/T14 validation. They were fixed in separate commits:
++
++| Commit | Change |
++| --- | --- |
++| `b19a1b75` | JUnit, SonarQube, TeamCity, and TAP report exhausted unexpected `[!shouldfail]` passes and accepted failures from the final logical outcome. |
++| `0dd78e55` | Machine-readable reporters preserve missing-assertion failures and superseded diagnostics when no assertion event is emitted. |
++| `5669b8e6` | Console and compact report final skipped and accepted outcomes accurately. |
++| `30ab6617` | JUnit retry-enabled suite counters count final logical test cases and distinguish errors from failures. |
++
++After these changes, the regenerated sources and configured Windows builds
++were validated again. The focused reporter/amalgamation group passed 5/5,
++`all` passed 157/157, and `basic` passed 92/92. No unapproved approval-test
++baselines were produced; the only build warnings were the four known MSVC
++`D9025` warnings from disabled-exceptions targets. `git diff --check` passed.
++All 18 exported patches applied to a clean `v3.16.0` worktree and produced
++tree `8c8ac8df7cde538ceeb80dd299baec31103bf847`, matching commit `30ab6617`.
++
+ ## 9. Known limitations and unsupported cases
+ 
+ - Catch2 does not roll back test-owned or external state: globals, statics,
+diff --git a/docs/reporters.md b/docs/reporters.md
+index 1bc7b92b..f47e66f9 100644
+--- a/docs/reporters.md
++++ b/docs/reporters.md
+@@ -50,9 +50,11 @@ representations are:
+ | Automake | Writes one result line for the logical test case, based on its final outcome. |
+ 
+ With retries disabled, reporter output is unchanged. With retries enabled but
+-unused, only XML and JSON add structural attempt information. TAP buffers its
+-own lines until an attempt ends, so those lines can interleave differently
+-with output written directly by the test; the TAP text itself is unchanged.
++unused, XML and JSON add structural attempt information. Accepted failures
++(`[!mayfail]` or an expected failure under `[!shouldfail]`) are represented
++as skipped in JUnit and marked `TODO` in TAP, even when no additional attempt
++runs. TAP buffers its own lines until an attempt ends, so those lines can
++interleave differently with output written directly by the test.
+ 
+ Custom reporters can observe attempts through the
+ [`testCaseAttempt` events](reporter-events.md#testcaseattempt-events).
+-- 
+2.56.0.windows.1
+

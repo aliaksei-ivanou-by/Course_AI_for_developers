@@ -12,17 +12,19 @@ M-2 resolution date: 2026-10-05
 
 M-3 resolution date: 2026-10-05
 
+L-1 resolution date: 2026-10-05
+
 Reviewed Catch2 revision: `9037e6faa6638b160d2f24e240f6b671d979c99d`
 
 Resolved Catch2 revision: `b19a1b75c19b6f85d438e0653855a20f6d5ef95d`
 
-Current Catch2 revision: `30ab6617e459ea98fbc27b4c201a73bccb20f213`
+Current Catch2 revision: `a95e3dd10ab0bdbe994152b59152cf220ddb3028`
 
 Baseline: `v3.16.0` (`fd79eadb5bc1760e7cbae12fd45b0d0040d1bb73`)
 
 ## Gate Status
 
-**Not passed yet.** H-1, M-1, H-2, M-2, and M-3 are resolved. Only the low-severity L-1 documentation/evidence inconsistency remains open. No Catch2 production or test file was changed during the read-only second review; the findings were fixed afterwards in separate commits.
+**Passed.** H-1, M-1, H-2, M-2, M-3, and L-1 are resolved. The reporter documentation now describes accepted-failure output when retries are enabled but no retry occurs, and the implementation notes include the post-review fixes and final validation results.
 
 ## Findings
 
@@ -166,11 +168,13 @@ A single deterministic test containing three final `CHECK(false)` assertions, ru
 
 **Severity:** Low
 
-**Status:** Open
+**Status:** Resolved
 
 `docs/reporters.md:52-54` says that, when retries are enabled but unused, only XML and JSON differ. After M-1, a one-attempt accepted failure also changes JUnit and TAP output, so the statement is no longer true. `IMPLEMENTATION_NOTES.md:180-209` describes the T13/T14 clean-build result as validation of the final files, but the current reporter fix in `b19a1b75` was committed afterwards and its incremental rebuild/full-suite evidence is recorded only in this course artifact.
 
 **Required resolution:** document the accepted-failure exception and append the post-review reporter change and exact final validation results to `IMPLEMENTATION_NOTES.md`.
+
+**Resolution:** `docs/reporters.md` now states that accepted failures (`[!mayfail]` and expected-failing `[!shouldfail]`) appear as skipped in JUnit and `TODO` in TAP when retrying is enabled, even if no further attempt runs. `IMPLEMENTATION_NOTES.md` records the post-review commits, focused and full test totals, build warnings, and clean-base patch-tree verification.
 
 ## Verification Gaps
 
@@ -208,6 +212,8 @@ The first review found that reporter cases used ordinary failed assertions while
 - Resolved M-3 in `30ab6617`: retry-enabled JUnit suite counters now count final logical cases, including one failure per failed case and correct error/failure classification. New parser checks cover multiple final assertions and a final exception.
 - Regenerated amalgamated sources and rebuilt the configured Windows trees. The focused reporter/amalgamation group passed 5/5, `all` passed 157/157, and `basic` passed 92/92. No unapproved baseline was produced; the only build warnings were the four known baseline MSVC `D9025` warnings.
 - Applied all 18 exported patches to a clean `v3.16.0` worktree. Its tree ID, `8c8ac8df7cde538ceeb80dd299baec31103bf847`, exactly matched `30ab6617`; the disposable worktree was then removed.
+- Resolved L-1 in `a95e3dd1`: clarified accepted-failure output in the reporter guide and appended exact post-review implementation and validation evidence.
+- Applied all 19 exported patches to a clean `v3.16.0` worktree. Its tree ID, `42faf819c2d9c5856822ff8780b0f9fe73ca9eef`, exactly matched `a95e3dd1`; the disposable worktree was then removed.
 
 ## Resolution Log
 
@@ -218,4 +224,4 @@ The first review found that reporter cases used ordinary failed assertions while
 | H-2 | Resolved in `0dd78e55` (`0016-Report-retry-failures-without-assertion-events.patch`) | Exhausted and fail-to-pass `NoAssertions` scenarios pass for JUnit, SonarQube, TeamCity, and TAP; TAP emits one point with plan `1..1`; focused group 5/5; all preset 157/157; basic preset 92/92 |
 | M-2 | Resolved in `5669b8e6` (`0017-Report-final-retry-outcomes-in-human-reporters.patch`) | Recorder totals and direct console/compact output checks cover final skip and accepted failure; focused group 5/5; all preset 157/157; basic preset 92/92 |
 | M-3 | Resolved in `30ab6617` (`0018-Count-logical-retry-results-in-JUnit-suites.patch`) | JUnit parser checks cover three-assertion pass/failure and final exception; focused group 5/5; all preset 157/157; basic preset 92/92; 18-patch clean-base application matches tree `8c8ac8df` |
-| L-1 | Open | Documentation and implementation-note evidence inspected against post-review behavior and commit history |
+| L-1 | Resolved in `a95e3dd1` (`0019-Document-accepted-retry-outcomes-and-final-validation.patch`) | Reporter guide describes accepted failures with unused retries; implementation notes record post-review fixes and exact validation; 19-patch clean-base application matches tree `42faf819` |
