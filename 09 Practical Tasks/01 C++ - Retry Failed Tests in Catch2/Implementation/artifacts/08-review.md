@@ -2,13 +2,17 @@
 
 Date: 2026-10-04
 
+Resolution date: 2026-10-05
+
 Reviewed Catch2 revision: `9037e6faa6638b160d2f24e240f6b671d979c99d`
+
+Resolved Catch2 revision: `b19a1b75c19b6f85d438e0653855a20f6d5ef95d`
 
 Baseline: `v3.16.0` (`fd79eadb5bc1760e7cbae12fd45b0d0040d1bb73`)
 
 ## Gate Status
 
-**Not passed.** One high-severity and one medium-severity reporter finding remain open. No Catch2 production or test file was changed during this review.
+**Passed.** The high-severity and medium-severity reporter findings were resolved in a dedicated follow-up commit. The focused reporter checks and both configured Catch2 suites pass after the change.
 
 ## Findings
 
@@ -16,7 +20,7 @@ Baseline: `v3.16.0` (`fd79eadb5bc1760e7cbae12fd45b0d0040d1bb73`)
 
 **Severity:** High
 
-**Status:** Open
+**Status:** Resolved
 
 The reviewed specification says that an unexpected pass under `[!shouldfail]` is a failed attempt and remains failed when its retry budget is exhausted (`03-spec.md:51`). It also requires every built-in reporter to report the final status correctly (`04-clarifications.md:72-73`), with final outcome deciding JUnit/SonarQube failure and an exhausted test being failed in TeamCity (`03-spec.md:116-119`).
 
@@ -51,11 +55,13 @@ Controls from the same executable reported the semantic failure correctly: XML w
 
 **Required resolution:** make these reporters use authoritative attempt/test-case outcome data when the semantic result differs from the assertion stream. Add parser/consumer-oriented tests for an exhausted unexpected `[!shouldfail]` pass to JUnit, SonarQube, TeamCity, and TAP. Preserve the current zero-retry output compatibility requirement.
 
+**Resolution:** JUnit and SonarQube now synthesize a final failure when the authoritative retry-enabled test-case outcome is failed but the assertion tree contains no failed assertion. TeamCity emits the corresponding `testFailed` service message, and TAP emits a synthetic failing test point with a matching plan. The behavior is gated by `retryFailed() > 0`, so the zero-retry reporter paths remain unchanged. Parser/consumer-oriented scenarios cover all four reporters.
+
 ### M-1 — Accepted failures remain consumer-visible failures in JUnit and TAP
 
 **Severity:** Medium
 
-**Status:** Open; likely resolved by the same semantic-outcome handling as H-1
+**Status:** Resolved
 
 With `--retry-failed 2`, both `[!mayfail]` failure and expected `[!shouldfail]` failure correctly stop after one attempt and exit successfully. However, an exploratory run of `[.retry-mayfail]` showed:
 
@@ -66,9 +72,11 @@ The accepted-failure scenario is checked only through `retry-recorder` in `tests
 
 This behaviour exists in the reporter's assertion-oriented path, but retry-enabled output is required to preserve Catch2's accepted-failure outcome and to report final logical status correctly. The fix should suppress counting failure elements/test points for `totals.testCases.failedButOk`, while retaining the assertion as non-failing diagnostics.
 
+**Resolution:** For retry-enabled output, JUnit represents an accepted failure as skipped and preserves its assertion text under `system-out`, without a `failure` or `error` child. TAP marks the assertion point with `# TODO accepted failure`. SonarQube and TeamCity controls verify that their accepted-failure representations remain non-failing. The new tests parse or inspect each reporter's consumer-visible protocol.
+
 ## Verification Gaps
 
-- Machine-readable special-tag coverage is missing. The recorder proves the runner's `[!mayfail]` and `[!shouldfail]` totals, but no built-in reporter test consumes those final semantic outcomes. This gap allowed H-1 and M-1 through the full suite.
+- Machine-readable special-tag coverage was missing when the review was performed. It is now present for JUnit, SonarQube, TeamCity, and TAP, covering both exhausted unexpected `[!shouldfail]` passes and accepted `[!mayfail]` failures.
 - Fatal-path structure is parser-tested only for JUnit. During review, XML output from the fatal fixture remained well-formed; JSON and Automake wrote no stdout before Windows terminated the process. This was not classified as a defect because fatal reporting is explicitly best-effort and the review did not establish a regression from `v3.16.0`, but it remains an unverified compatibility area.
 - Debugger-break preservation (`CO-6`) is supported only by code-path inspection; there is no automated debugger integration test.
 
@@ -82,14 +90,15 @@ The weakness is outcome diversity in reporter tests: their flaky/exhausted cases
 
 - Inspected the complete 42-file `v3.16.0..9037e6fa` change set and the relevant unchanged runner, tracker, totals, invoker, and reporter-base code.
 - Traced CLI, attempt loop, tracker/generator reset, fixture prepare/tear-down, assertion counter restoration, abort precedence, fatal event balancing, cumulative/streaming reporter state, and zero-retry compatibility against the approved specification and clarifications.
-- `git diff --check v3.16.0 HEAD` passed.
-- Both the Catch2 checkout and course repository were clean before this artifact was created; ignored Python bytecode caches were the only ignored workspace entries.
-- Reproduced H-1 and M-1 with the already validated final Windows binary from the T13 build. No build or full regression was repeated because the review made no Catch2 changes.
-- The previously recorded final regression remains: basic preset 92/92, all preset 157/157, focused final checks 2/2 and 3/3, with no unapproved baselines and only the four baseline MSVC `D9025` warnings.
+- `git diff --check v3.16.0 HEAD` passed before the review and `git diff --check` passed again after the resolution.
+- Both the Catch2 checkout and course repository were clean before this artifact was created; ignored Python bytecode caches were the only ignored workspace entries. The resolution was committed separately and exported as patch `0015`.
+- Reproduced H-1 and M-1 with the previously validated Windows binary, then added scenarios that fail on the reviewed implementation and pass on the resolution.
+- Regenerated the amalgamated sources, rebuilt both configured trees, and reran the final suites after the reporter fix: basic preset 92/92 and all preset 157/157. The focused reporter/amalgamation group passed 5/5, no unapproved baselines were produced, and the only build warnings were the four known baseline MSVC `D9025` warnings.
+- Applied all 15 exported patches to a separate clean `v3.16.0` worktree. The resulting tree ID, `ce9de81f9b53d5b54637c9157f8f468eae74c762`, exactly matched the implementation branch.
 
 ## Resolution Log
 
 | Finding | Resolution | Verification |
 | --- | --- | --- |
-| H-1 | Open | Reproduced on final binary; fix and focused reporter tests required |
-| M-1 | Open | Reproduced on final binary; expected to share H-1's semantic-outcome fix |
+| H-1 | Resolved in `b19a1b75` (`0015-Report-semantic-retry-outcomes-in-machine-reporters.patch`) | New JUnit, SonarQube, TeamCity, and TAP semantic-failure scenarios pass; focused group 5/5; all preset 157/157 |
+| M-1 | Resolved in `b19a1b75` (`0015-Report-semantic-retry-outcomes-in-machine-reporters.patch`) | New accepted-failure scenarios pass for all four reporters; basic preset 92/92; all preset 157/157 |

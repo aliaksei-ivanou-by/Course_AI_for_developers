@@ -1,0 +1,1125 @@
+From b19a1b75c19b6f85d438e0653855a20f6d5ef95d Mon Sep 17 00:00:00 2001
+From: Aliaksei Ivanou <aliaksei.ivanou@innowise.com>
+Date: Mon, 5 Oct 2026 06:18:06 +0200
+Subject: [PATCH] Report semantic retry outcomes in machine reporters
+
+---
+ extras/catch_amalgamated.cpp                  | 210 +++++++++++++++---
+ extras/catch_amalgamated.hpp                  |  24 +-
+ src/catch2/reporters/catch_reporter_junit.cpp | 107 +++++++--
+ src/catch2/reporters/catch_reporter_junit.hpp |  13 +-
+ .../reporters/catch_reporter_sonarqube.cpp    |  53 ++++-
+ .../reporters/catch_reporter_sonarqube.hpp    |   5 +-
+ src/catch2/reporters/catch_reporter_tap.cpp   |  35 ++-
+ src/catch2/reporters/catch_reporter_tap.hpp   |   5 +-
+ .../reporters/catch_reporter_teamcity.cpp     |  13 +-
+ .../reporters/catch_reporter_teamcity.hpp     |   1 +
+ tests/TestScripts/testRetryFailed.py          | 152 +++++++++++++
+ 11 files changed, 555 insertions(+), 63 deletions(-)
+
+diff --git a/extras/catch_amalgamated.cpp b/extras/catch_amalgamated.cpp
+index 856f8a4f..40e792b7 100644
+--- a/extras/catch_amalgamated.cpp
++++ b/extras/catch_amalgamated.cpp
+@@ -7,7 +7,7 @@
+ // SPDX-License-Identifier: BSL-1.0
+ 
+ //  Catch v3.16.0
+-//  Generated: 2026-10-04 20:38:30.501511
++//  Generated: 2026-10-04 21:13:39.665825
+ //  ----------------------------------------------------------
+ //  This file is an amalgamation of multiple different files.
+ //  You probably shouldn't edit it directly.
+@@ -11593,6 +11593,22 @@ namespace Catch {
+             }
+         }
+ 
++        bool hasJunitFailingAssertion(
++            CumulativeReporterBase::SectionNode const& sectionNode ) {
++            for ( auto const& assertionOrBenchmark :
++                  sectionNode.assertionsAndBenchmarks ) {
++                if ( assertionOrBenchmark.isAssertion() &&
++                     !assertionOrBenchmark.asAssertion()
++                          .assertionResult.isOk() ) {
++                    return true;
++                }
++            }
++            for ( auto const& child : sectionNode.childSections ) {
++                if ( hasJunitFailingAssertion( *child ) ) { return true; }
++            }
++            return false;
++        }
++
+         std::string makeSupersededAttemptOutput(
+             CumulativeReporterBase::TestCaseNode const& testCaseNode ) {
+             ReusableStringStream rss;
+@@ -11691,10 +11707,30 @@ namespace Catch {
+ 
+         TestRunStats const& stats = testRunNode.value;
+         xml.writeAttribute( "name"_sr, stats.runInfo.name );
++        auto failures =
++            stats.totals.assertions.failed - unexpectedExceptions;
++        if ( m_config->retryFailed() > 0 ) {
++            auto const accountedFailures = failures + unexpectedExceptions;
++            if ( stats.totals.testCases.failed > accountedFailures ) {
++                failures +=
++                    stats.totals.testCases.failed - accountedFailures;
++            }
++        }
+         xml.writeAttribute( "errors"_sr, unexpectedExceptions );
+-        xml.writeAttribute( "failures"_sr, stats.totals.assertions.failed-unexpectedExceptions );
+-        xml.writeAttribute( "skipped"_sr, stats.totals.assertions.skipped );
+-        xml.writeAttribute( "tests"_sr, stats.totals.assertions.total() );
++        xml.writeAttribute( "failures"_sr, failures );
++        auto skipped = stats.totals.assertions.skipped;
++        if ( m_config->retryFailed() > 0 ) {
++            skipped = ( std::max )(
++                skipped,
++                stats.totals.testCases.skipped +
++                    stats.totals.testCases.failedButOk );
++        }
++        xml.writeAttribute( "skipped"_sr, skipped );
++        auto tests = stats.totals.assertions.total();
++        if ( m_config->retryFailed() > 0 ) {
++            tests = ( std::max )( tests, stats.totals.testCases.total() );
++        }
++        xml.writeAttribute( "tests"_sr, tests );
+         xml.writeAttribute( "hostname"_sr, "tbd"_sr ); // !TBD
+         if( m_config->showDurations() == ShowDurations::Never )
+             xml.writeAttribute( "time"_sr, ""_sr );
+@@ -11747,19 +11783,35 @@ namespace Catch {
+         normalizeNamespaceMarkers(className);
+ 
+         auto pendingSystemOut = makeSupersededAttemptOutput( testCaseNode );
++        auto const useSemanticOutcome = m_config->retryFailed() > 0;
++        auto const suppressAssertionFailures =
++            useSemanticOutcome && stats.totals.testCases.failedButOk > 0;
++        if ( suppressAssertionFailures ) {
++            ReusableStringStream acceptedFailure;
++            acceptedFailure << "Accepted failure:\n";
++            appendJunitAssertionDiagnostics( rootSection,
++                                             acceptedFailure );
++            pendingSystemOut += acceptedFailure.str();
++        }
++        bool pendingSemanticFailure =
++            useSemanticOutcome && stats.totals.testCases.failed > 0 &&
++            !hasJunitFailingAssertion( rootSection );
+         writeSection( className,
+                       "",
+                       rootSection,
+-                      stats.testInfo->okToFail(),
+-                      pendingSystemOut );
++                      suppressAssertionFailures,
++                      pendingSystemOut,
++                      pendingSemanticFailure );
+         assert( pendingSystemOut.empty() );
++        assert( !pendingSemanticFailure );
+     }
+ 
+     void JunitReporter::writeSection( std::string const& className,
+                                       std::string const& rootName,
+                                       SectionNode const& sectionNode,
+-                                      bool testOkToFail,
+-                                      std::string& pendingSystemOut ) {
++                                      bool suppressAssertionFailures,
++                                      std::string& pendingSystemOut,
++                                      bool& pendingSemanticFailure ) {
+         std::string name = trim( sectionNode.stats.sectionInfo.name );
+         if( !rootName.empty() )
+             name = rootName + '/' + name;
+@@ -11767,7 +11819,8 @@ namespace Catch {
+         if ( sectionNode.stats.assertions.total() > 0
+            || !sectionNode.stdOut.empty()
+            || !sectionNode.stdErr.empty()
+-           || !pendingSystemOut.empty() ) {
++           || !pendingSystemOut.empty()
++           || pendingSemanticFailure ) {
+             XmlWriter::ScopedElement e = xml.scopedElement( "testcase" );
+             if( className.empty() ) {
+                 xml.writeAttribute( "classname"_sr, name );
+@@ -11789,7 +11842,20 @@ namespace Catch {
+                     .writeAttribute("message", "TEST_CASE tagged with !mayfail");
+             }
+ 
+-            writeAssertions( sectionNode );
++            if ( pendingSemanticFailure ) {
++                auto failure = xml.scopedElement( "failure" );
++                failure.writeAttribute(
++                    "message"_sr,
++                    "test case passed but was expected to fail"_sr );
++                failure.writeAttribute( "type"_sr, "!shouldfail"_sr );
++                failure.writeText(
++                    "The final attempt passed unexpectedly for a test case "
++                    "tagged with [!shouldfail]."_sr,
++                    XmlFormatting::Newline );
++                pendingSemanticFailure = false;
++            }
++
++            writeAssertions( sectionNode, suppressAssertionFailures );
+ 
+ 
+             if ( !pendingSystemOut.empty() || !sectionNode.stdOut.empty() ) {
+@@ -11807,31 +11873,40 @@ namespace Catch {
+                 writeSection( name,
+                               "",
+                               *childNode,
+-                              testOkToFail,
+-                              pendingSystemOut );
++                              suppressAssertionFailures,
++                              pendingSystemOut,
++                              pendingSemanticFailure );
+             else
+                 writeSection( className,
+                               name,
+                               *childNode,
+-                              testOkToFail,
+-                              pendingSystemOut );
++                              suppressAssertionFailures,
++                              pendingSystemOut,
++                              pendingSemanticFailure );
+     }
+ 
+-    void JunitReporter::writeAssertions( SectionNode const& sectionNode ) {
++    void JunitReporter::writeAssertions( SectionNode const& sectionNode,
++                                         bool suppressFailures ) {
+         for (auto const& assertionOrBenchmark : sectionNode.assertionsAndBenchmarks) {
+             if (assertionOrBenchmark.isAssertion()) {
+                 // JUnit XML format supports only 1 error/failure/skip
+                 // assertion elements per test case
+-                if (writeAssertion(assertionOrBenchmark.asAssertion())) {
++                if ( writeAssertion( assertionOrBenchmark.asAssertion(),
++                                     suppressFailures ) ) {
+                     break;
+                 }
+             }
+         }
+     }
+ 
+-    bool JunitReporter::writeAssertion( AssertionStats const& stats ) {
++    bool JunitReporter::writeAssertion( AssertionStats const& stats,
++                                        bool suppressFailure ) {
+         AssertionResult const& result = stats.assertionResult;
+         if ( !shouldWriteJunitAssertion( result ) ) { return false; }
++        if ( suppressFailure && !result.isOk() &&
++             result.getResultType() != ResultWas::ExplicitSkip ) {
++            return false;
++        }
+         std::string elementName;
+         switch ( result.getResultType() ) {
+         case ResultWas::ThrewException:
+@@ -12177,6 +12252,24 @@ namespace Catch {
+             }
+         }
+ 
++        bool hasSonarQubeFailingAssertion(
++            CumulativeReporterBase::SectionNode const& sectionNode ) {
++            for ( auto const& assertionOrBenchmark :
++                  sectionNode.assertionsAndBenchmarks ) {
++                if ( assertionOrBenchmark.isAssertion() &&
++                     !assertionOrBenchmark.asAssertion()
++                          .assertionResult.isOk() ) {
++                    return true;
++                }
++            }
++            for ( auto const& child : sectionNode.childSections ) {
++                if ( hasSonarQubeFailingAssertion( *child ) ) {
++                    return true;
++                }
++            }
++            return false;
++        }
++
+         std::string sanitizeXmlComment( std::string const& text ) {
+             std::string sanitized;
+             sanitized.reserve( text.size() );
+@@ -12240,26 +12333,53 @@ namespace Catch {
+         // test case itself. That section may have 0-n nested sections
+         assert(testCaseNode.children.size() == 1);
+         SectionNode const& rootSection = *testCaseNode.children.front();
+-        writeSection("", rootSection, testCaseNode.value.testInfo->okToFail());
++        bool pendingSemanticFailure =
++            m_config->retryFailed() > 0 &&
++            testCaseNode.value.totals.testCases.failed > 0 &&
++            !hasSonarQubeFailingAssertion( rootSection );
++        writeSection( "",
++                      rootSection,
++                      testCaseNode.value.testInfo->okToFail(),
++                      pendingSemanticFailure );
++        assert( !pendingSemanticFailure );
+     }
+ 
+-    void SonarQubeReporter::writeSection(std::string const& rootName, SectionNode const& sectionNode, bool okToFail) {
++    void SonarQubeReporter::writeSection(
++        std::string const& rootName,
++        SectionNode const& sectionNode,
++        bool okToFail,
++        bool& pendingSemanticFailure ) {
+         std::string name = trim(sectionNode.stats.sectionInfo.name);
+         if (!rootName.empty())
+             name = rootName + '/' + name;
+ 
+         if ( sectionNode.stats.assertions.total() > 0
+             || !sectionNode.stdOut.empty()
+-            || !sectionNode.stdErr.empty() ) {
++            || !sectionNode.stdErr.empty()
++            || pendingSemanticFailure ) {
+             XmlWriter::ScopedElement e = xml.scopedElement("testCase");
+             xml.writeAttribute("name"_sr, name);
+             xml.writeAttribute("duration"_sr, static_cast<long>(sectionNode.stats.durationInSeconds * 1000));
+ 
++            if ( pendingSemanticFailure ) {
++                auto failure = xml.scopedElement( "failure" );
++                failure.writeAttribute(
++                    "message"_sr,
++                    "test case passed but was expected to fail"_sr );
++                failure.writeText(
++                    "The final attempt passed unexpectedly for a test case "
++                    "tagged with [!shouldfail]."_sr,
++                    XmlFormatting::Newline );
++                pendingSemanticFailure = false;
++            }
+             writeAssertions(sectionNode, okToFail);
+         }
+ 
+         for (auto const& childNode : sectionNode.childSections)
+-            writeSection(name, *childNode, okToFail);
++            writeSection( name,
++                          *childNode,
++                          okToFail,
++                          pendingSemanticFailure );
+     }
+ 
+     void SonarQubeReporter::writeAssertions(SectionNode const& sectionNode, bool okToFail) {
+@@ -12533,6 +12653,7 @@ namespace Catch {
+     } // End anonymous namespace
+ 
+     void TAPReporter::testRunStarting( TestRunInfo const& ) {
++        m_syntheticAssertions = 0;
+         if ( m_config->testSpec().hasFilters() ) {
+             m_stream << "# filters: " << m_config->testSpec() << '\n';
+         }
+@@ -12561,17 +12682,31 @@ namespace Catch {
+     }
+ 
+     void TAPReporter::printAssertion( BufferedAssertion const& assertion,
+-                                      ColourImpl* colour ) {
++                                      ColourImpl* colour,
++                                      bool acceptedFailure ) {
+         ++counter;
+ 
+         m_stream << "# " << assertion.testName << '\n';
+         TapAssertionPrinter printer(
+             m_stream, assertion.stats, counter, colour );
+         printer.print();
++        if ( acceptedFailure &&
++             !assertion.stats.assertionResult.isOk() ) {
++            m_stream << " # TODO accepted failure";
++        }
+ 
+         m_stream << '\n' << std::flush;
+     }
+ 
++    void TAPReporter::printUnexpectedPassFailure() {
++        ++counter;
++        ++m_syntheticAssertions;
++        m_stream << "# " << currentTestCaseInfo->name << '\n'
++                 << "not ok " << counter
++                 << " - test case passed but was expected to fail "
++                    "([!shouldfail])\n";
++    }
++
+     void TAPReporter::testCaseAttemptStarting( TestCaseAttemptInfo const& ) {
+         m_bufferedAssertions.clear();
+     }
+@@ -12579,8 +12714,20 @@ namespace Catch {
+     void TAPReporter::testCaseAttemptEnded(
+         TestCaseAttemptStats const& attemptStats ) {
+         if ( attemptStats.isFinal ) {
++            auto const acceptedFailure =
++                attemptStats.totals.testCases.failedButOk > 0;
++            bool reportedFailure = false;
+             for ( auto const& assertion : m_bufferedAssertions ) {
+-                printAssertion( assertion, m_colour.get() );
++                reportedFailure =
++                    reportedFailure ||
++                    !assertion.stats.assertionResult.isOk();
++                printAssertion( assertion,
++                                m_colour.get(),
++                                acceptedFailure );
++            }
++            if ( attemptStats.totals.testCases.failed > 0 &&
++                 !reportedFailure ) {
++                printUnexpectedPassFailure();
+             }
+         } else {
+             auto diagnosticCounter = counter;
+@@ -12606,7 +12753,9 @@ namespace Catch {
+     }
+ 
+     void TAPReporter::testRunEnded(TestRunStats const& _testRunStats) {
+-        m_stream << "1.." << _testRunStats.totals.assertions.total();
++        m_stream << "1.."
++                 << _testRunStats.totals.assertions.total() +
++                        m_syntheticAssertions;
+         if (_testRunStats.totals.testCases.total() == 0) {
+             m_stream << " # Skipped: No tests ran.";
+         }
+@@ -12725,6 +12874,7 @@ namespace Catch {
+             }
+ 
+             ReusableStringStream serviceMessage;
++            bool isFailure = false;
+             if ( result.getResultType() == ResultWas::ExplicitSkip ) {
+                 serviceMessage << "##teamcity[testIgnored";
+             } else if ( currentTestCaseInfo->okToFail() ) {
+@@ -12732,6 +12882,7 @@ namespace Catch {
+                 serviceMessage << "##teamcity[testIgnored";
+             } else {
+                 serviceMessage << "##teamcity[testFailed";
++                isFailure = true;
+             }
+             serviceMessage
+                 << " name='" << escape( currentTestCaseInfo->name ) << '\''
+@@ -12739,7 +12890,7 @@ namespace Catch {
+ 
+             if ( m_config->retryFailed() > 0 ) {
+                 m_bufferedAssertions.push_back(
+-                    { serviceMessage.str(), msg.str() } );
++                    { serviceMessage.str(), msg.str(), isFailure } );
+             } else {
+                 m_stream << serviceMessage.str();
+             }
+@@ -12763,8 +12914,17 @@ namespace Catch {
+     void TeamCityReporter::testCaseAttemptEnded(
+         TestCaseAttemptStats const& attemptStats ) {
+         if ( attemptStats.isFinal ) {
++            bool reportedFailure = false;
+             for ( auto const& assertion : m_bufferedAssertions ) {
+                 m_stream << assertion.serviceMessage;
++                reportedFailure = reportedFailure || assertion.isFailure;
++            }
++            if ( attemptStats.totals.testCases.failed > 0 &&
++                 !reportedFailure ) {
++                m_stream << "##teamcity[testFailed name='"
++                         << escape( currentTestCaseInfo->name )
++                         << "' message='Test case passed but was expected "
++                            "to fail (|[!shouldfail|])']\n";
+             }
+         } else {
+             for ( auto const& assertion : m_bufferedAssertions ) {
+diff --git a/extras/catch_amalgamated.hpp b/extras/catch_amalgamated.hpp
+index db98705c..43f0a47a 100644
+--- a/extras/catch_amalgamated.hpp
++++ b/extras/catch_amalgamated.hpp
+@@ -7,7 +7,7 @@
+ // SPDX-License-Identifier: BSL-1.0
+ 
+ //  Catch v3.16.0
+-//  Generated: 2026-10-04 20:38:30.470148
++//  Generated: 2026-10-04 21:13:39.637413
+ //  ----------------------------------------------------------
+ //  This file is an amalgamation of multiple different files.
+ //  You probably shouldn't edit it directly.
+@@ -14512,11 +14512,14 @@ namespace Catch {
+         void writeSection( std::string const& className,
+                            std::string const& rootName,
+                            SectionNode const& sectionNode,
+-                           bool testOkToFail,
+-                           std::string& pendingSystemOut );
++                           bool suppressAssertionFailures,
++                           std::string& pendingSystemOut,
++                           bool& pendingSemanticFailure );
+ 
+-        void writeAssertions(SectionNode const& sectionNode);
+-        bool writeAssertion(AssertionStats const& stats);
++        void writeAssertions( SectionNode const& sectionNode,
++                              bool suppressFailures );
++        bool writeAssertion( AssertionStats const& stats,
++                             bool suppressFailure );
+ 
+         XmlWriter xml;
+         Timer suiteTimer;
+@@ -14763,7 +14766,10 @@ namespace Catch {
+ 
+         void writeTestCase(TestCaseNode const& testCaseNode);
+ 
+-        void writeSection(std::string const& rootName, SectionNode const& sectionNode, bool okToFail);
++        void writeSection( std::string const& rootName,
++                           SectionNode const& sectionNode,
++                           bool okToFail,
++                           bool& pendingSemanticFailure );
+ 
+         void writeAssertions(SectionNode const& sectionNode, bool okToFail);
+ 
+@@ -14826,9 +14832,12 @@ namespace Catch {
+         };
+ 
+         void printAssertion( BufferedAssertion const& assertion,
+-                             ColourImpl* colour );
++                             ColourImpl* colour,
++                             bool acceptedFailure = false );
++        void printUnexpectedPassFailure();
+ 
+         std::size_t counter = 0;
++        std::size_t m_syntheticAssertions = 0;
+         std::vector<BufferedAssertion> m_bufferedAssertions;
+     };
+ 
+@@ -14893,6 +14902,7 @@ namespace Catch {
+         struct BufferedAssertion {
+             std::string serviceMessage;
+             std::string diagnostic;
++            bool isFailure;
+         };
+ 
+         void printSectionHeader(std::ostream& os);
+diff --git a/src/catch2/reporters/catch_reporter_junit.cpp b/src/catch2/reporters/catch_reporter_junit.cpp
+index 6998a65d..1c78785b 100644
+--- a/src/catch2/reporters/catch_reporter_junit.cpp
++++ b/src/catch2/reporters/catch_reporter_junit.cpp
+@@ -125,6 +125,22 @@ namespace Catch {
+             }
+         }
+ 
++        bool hasJunitFailingAssertion(
++            CumulativeReporterBase::SectionNode const& sectionNode ) {
++            for ( auto const& assertionOrBenchmark :
++                  sectionNode.assertionsAndBenchmarks ) {
++                if ( assertionOrBenchmark.isAssertion() &&
++                     !assertionOrBenchmark.asAssertion()
++                          .assertionResult.isOk() ) {
++                    return true;
++                }
++            }
++            for ( auto const& child : sectionNode.childSections ) {
++                if ( hasJunitFailingAssertion( *child ) ) { return true; }
++            }
++            return false;
++        }
++
+         std::string makeSupersededAttemptOutput(
+             CumulativeReporterBase::TestCaseNode const& testCaseNode ) {
+             ReusableStringStream rss;
+@@ -223,10 +239,30 @@ namespace Catch {
+ 
+         TestRunStats const& stats = testRunNode.value;
+         xml.writeAttribute( "name"_sr, stats.runInfo.name );
++        auto failures =
++            stats.totals.assertions.failed - unexpectedExceptions;
++        if ( m_config->retryFailed() > 0 ) {
++            auto const accountedFailures = failures + unexpectedExceptions;
++            if ( stats.totals.testCases.failed > accountedFailures ) {
++                failures +=
++                    stats.totals.testCases.failed - accountedFailures;
++            }
++        }
+         xml.writeAttribute( "errors"_sr, unexpectedExceptions );
+-        xml.writeAttribute( "failures"_sr, stats.totals.assertions.failed-unexpectedExceptions );
+-        xml.writeAttribute( "skipped"_sr, stats.totals.assertions.skipped );
+-        xml.writeAttribute( "tests"_sr, stats.totals.assertions.total() );
++        xml.writeAttribute( "failures"_sr, failures );
++        auto skipped = stats.totals.assertions.skipped;
++        if ( m_config->retryFailed() > 0 ) {
++            skipped = ( std::max )(
++                skipped,
++                stats.totals.testCases.skipped +
++                    stats.totals.testCases.failedButOk );
++        }
++        xml.writeAttribute( "skipped"_sr, skipped );
++        auto tests = stats.totals.assertions.total();
++        if ( m_config->retryFailed() > 0 ) {
++            tests = ( std::max )( tests, stats.totals.testCases.total() );
++        }
++        xml.writeAttribute( "tests"_sr, tests );
+         xml.writeAttribute( "hostname"_sr, "tbd"_sr ); // !TBD
+         if( m_config->showDurations() == ShowDurations::Never )
+             xml.writeAttribute( "time"_sr, ""_sr );
+@@ -279,19 +315,35 @@ namespace Catch {
+         normalizeNamespaceMarkers(className);
+ 
+         auto pendingSystemOut = makeSupersededAttemptOutput( testCaseNode );
++        auto const useSemanticOutcome = m_config->retryFailed() > 0;
++        auto const suppressAssertionFailures =
++            useSemanticOutcome && stats.totals.testCases.failedButOk > 0;
++        if ( suppressAssertionFailures ) {
++            ReusableStringStream acceptedFailure;
++            acceptedFailure << "Accepted failure:\n";
++            appendJunitAssertionDiagnostics( rootSection,
++                                             acceptedFailure );
++            pendingSystemOut += acceptedFailure.str();
++        }
++        bool pendingSemanticFailure =
++            useSemanticOutcome && stats.totals.testCases.failed > 0 &&
++            !hasJunitFailingAssertion( rootSection );
+         writeSection( className,
+                       "",
+                       rootSection,
+-                      stats.testInfo->okToFail(),
+-                      pendingSystemOut );
++                      suppressAssertionFailures,
++                      pendingSystemOut,
++                      pendingSemanticFailure );
+         assert( pendingSystemOut.empty() );
++        assert( !pendingSemanticFailure );
+     }
+ 
+     void JunitReporter::writeSection( std::string const& className,
+                                       std::string const& rootName,
+                                       SectionNode const& sectionNode,
+-                                      bool testOkToFail,
+-                                      std::string& pendingSystemOut ) {
++                                      bool suppressAssertionFailures,
++                                      std::string& pendingSystemOut,
++                                      bool& pendingSemanticFailure ) {
+         std::string name = trim( sectionNode.stats.sectionInfo.name );
+         if( !rootName.empty() )
+             name = rootName + '/' + name;
+@@ -299,7 +351,8 @@ namespace Catch {
+         if ( sectionNode.stats.assertions.total() > 0
+            || !sectionNode.stdOut.empty()
+            || !sectionNode.stdErr.empty()
+-           || !pendingSystemOut.empty() ) {
++           || !pendingSystemOut.empty()
++           || pendingSemanticFailure ) {
+             XmlWriter::ScopedElement e = xml.scopedElement( "testcase" );
+             if( className.empty() ) {
+                 xml.writeAttribute( "classname"_sr, name );
+@@ -321,7 +374,20 @@ namespace Catch {
+                     .writeAttribute("message", "TEST_CASE tagged with !mayfail");
+             }
+ 
+-            writeAssertions( sectionNode );
++            if ( pendingSemanticFailure ) {
++                auto failure = xml.scopedElement( "failure" );
++                failure.writeAttribute(
++                    "message"_sr,
++                    "test case passed but was expected to fail"_sr );
++                failure.writeAttribute( "type"_sr, "!shouldfail"_sr );
++                failure.writeText(
++                    "The final attempt passed unexpectedly for a test case "
++                    "tagged with [!shouldfail]."_sr,
++                    XmlFormatting::Newline );
++                pendingSemanticFailure = false;
++            }
++
++            writeAssertions( sectionNode, suppressAssertionFailures );
+ 
+ 
+             if ( !pendingSystemOut.empty() || !sectionNode.stdOut.empty() ) {
+@@ -339,31 +405,40 @@ namespace Catch {
+                 writeSection( name,
+                               "",
+                               *childNode,
+-                              testOkToFail,
+-                              pendingSystemOut );
++                              suppressAssertionFailures,
++                              pendingSystemOut,
++                              pendingSemanticFailure );
+             else
+                 writeSection( className,
+                               name,
+                               *childNode,
+-                              testOkToFail,
+-                              pendingSystemOut );
++                              suppressAssertionFailures,
++                              pendingSystemOut,
++                              pendingSemanticFailure );
+     }
+ 
+-    void JunitReporter::writeAssertions( SectionNode const& sectionNode ) {
++    void JunitReporter::writeAssertions( SectionNode const& sectionNode,
++                                         bool suppressFailures ) {
+         for (auto const& assertionOrBenchmark : sectionNode.assertionsAndBenchmarks) {
+             if (assertionOrBenchmark.isAssertion()) {
+                 // JUnit XML format supports only 1 error/failure/skip
+                 // assertion elements per test case
+-                if (writeAssertion(assertionOrBenchmark.asAssertion())) {
++                if ( writeAssertion( assertionOrBenchmark.asAssertion(),
++                                     suppressFailures ) ) {
+                     break;
+                 }
+             }
+         }
+     }
+ 
+-    bool JunitReporter::writeAssertion( AssertionStats const& stats ) {
++    bool JunitReporter::writeAssertion( AssertionStats const& stats,
++                                        bool suppressFailure ) {
+         AssertionResult const& result = stats.assertionResult;
+         if ( !shouldWriteJunitAssertion( result ) ) { return false; }
++        if ( suppressFailure && !result.isOk() &&
++             result.getResultType() != ResultWas::ExplicitSkip ) {
++            return false;
++        }
+         std::string elementName;
+         switch ( result.getResultType() ) {
+         case ResultWas::ThrewException:
+diff --git a/src/catch2/reporters/catch_reporter_junit.hpp b/src/catch2/reporters/catch_reporter_junit.hpp
+index d777565e..7a8f59c2 100644
+--- a/src/catch2/reporters/catch_reporter_junit.hpp
++++ b/src/catch2/reporters/catch_reporter_junit.hpp
+@@ -42,11 +42,14 @@ namespace Catch {
+         void writeSection( std::string const& className,
+                            std::string const& rootName,
+                            SectionNode const& sectionNode,
+-                           bool testOkToFail,
+-                           std::string& pendingSystemOut );
+-
+-        void writeAssertions(SectionNode const& sectionNode);
+-        bool writeAssertion(AssertionStats const& stats);
++                           bool suppressAssertionFailures,
++                           std::string& pendingSystemOut,
++                           bool& pendingSemanticFailure );
++
++        void writeAssertions( SectionNode const& sectionNode,
++                              bool suppressFailures );
++        bool writeAssertion( AssertionStats const& stats,
++                             bool suppressFailure );
+ 
+         XmlWriter xml;
+         Timer suiteTimer;
+diff --git a/src/catch2/reporters/catch_reporter_sonarqube.cpp b/src/catch2/reporters/catch_reporter_sonarqube.cpp
+index 8423c19f..bb198a9f 100644
+--- a/src/catch2/reporters/catch_reporter_sonarqube.cpp
++++ b/src/catch2/reporters/catch_reporter_sonarqube.cpp
+@@ -88,6 +88,24 @@ namespace Catch {
+             }
+         }
+ 
++        bool hasSonarQubeFailingAssertion(
++            CumulativeReporterBase::SectionNode const& sectionNode ) {
++            for ( auto const& assertionOrBenchmark :
++                  sectionNode.assertionsAndBenchmarks ) {
++                if ( assertionOrBenchmark.isAssertion() &&
++                     !assertionOrBenchmark.asAssertion()
++                          .assertionResult.isOk() ) {
++                    return true;
++                }
++            }
++            for ( auto const& child : sectionNode.childSections ) {
++                if ( hasSonarQubeFailingAssertion( *child ) ) {
++                    return true;
++                }
++            }
++            return false;
++        }
++
+         std::string sanitizeXmlComment( std::string const& text ) {
+             std::string sanitized;
+             sanitized.reserve( text.size() );
+@@ -151,26 +169,53 @@ namespace Catch {
+         // test case itself. That section may have 0-n nested sections
+         assert(testCaseNode.children.size() == 1);
+         SectionNode const& rootSection = *testCaseNode.children.front();
+-        writeSection("", rootSection, testCaseNode.value.testInfo->okToFail());
++        bool pendingSemanticFailure =
++            m_config->retryFailed() > 0 &&
++            testCaseNode.value.totals.testCases.failed > 0 &&
++            !hasSonarQubeFailingAssertion( rootSection );
++        writeSection( "",
++                      rootSection,
++                      testCaseNode.value.testInfo->okToFail(),
++                      pendingSemanticFailure );
++        assert( !pendingSemanticFailure );
+     }
+ 
+-    void SonarQubeReporter::writeSection(std::string const& rootName, SectionNode const& sectionNode, bool okToFail) {
++    void SonarQubeReporter::writeSection(
++        std::string const& rootName,
++        SectionNode const& sectionNode,
++        bool okToFail,
++        bool& pendingSemanticFailure ) {
+         std::string name = trim(sectionNode.stats.sectionInfo.name);
+         if (!rootName.empty())
+             name = rootName + '/' + name;
+ 
+         if ( sectionNode.stats.assertions.total() > 0
+             || !sectionNode.stdOut.empty()
+-            || !sectionNode.stdErr.empty() ) {
++            || !sectionNode.stdErr.empty()
++            || pendingSemanticFailure ) {
+             XmlWriter::ScopedElement e = xml.scopedElement("testCase");
+             xml.writeAttribute("name"_sr, name);
+             xml.writeAttribute("duration"_sr, static_cast<long>(sectionNode.stats.durationInSeconds * 1000));
+ 
++            if ( pendingSemanticFailure ) {
++                auto failure = xml.scopedElement( "failure" );
++                failure.writeAttribute(
++                    "message"_sr,
++                    "test case passed but was expected to fail"_sr );
++                failure.writeText(
++                    "The final attempt passed unexpectedly for a test case "
++                    "tagged with [!shouldfail]."_sr,
++                    XmlFormatting::Newline );
++                pendingSemanticFailure = false;
++            }
+             writeAssertions(sectionNode, okToFail);
+         }
+ 
+         for (auto const& childNode : sectionNode.childSections)
+-            writeSection(name, *childNode, okToFail);
++            writeSection( name,
++                          *childNode,
++                          okToFail,
++                          pendingSemanticFailure );
+     }
+ 
+     void SonarQubeReporter::writeAssertions(SectionNode const& sectionNode, bool okToFail) {
+diff --git a/src/catch2/reporters/catch_reporter_sonarqube.hpp b/src/catch2/reporters/catch_reporter_sonarqube.hpp
+index 98803a2a..3d18648d 100644
+--- a/src/catch2/reporters/catch_reporter_sonarqube.hpp
++++ b/src/catch2/reporters/catch_reporter_sonarqube.hpp
+@@ -44,7 +44,10 @@ namespace Catch {
+ 
+         void writeTestCase(TestCaseNode const& testCaseNode);
+ 
+-        void writeSection(std::string const& rootName, SectionNode const& sectionNode, bool okToFail);
++        void writeSection( std::string const& rootName,
++                           SectionNode const& sectionNode,
++                           bool okToFail,
++                           bool& pendingSemanticFailure );
+ 
+         void writeAssertions(SectionNode const& sectionNode, bool okToFail);
+ 
+diff --git a/src/catch2/reporters/catch_reporter_tap.cpp b/src/catch2/reporters/catch_reporter_tap.cpp
+index cd4509ae..077a3d1a 100644
+--- a/src/catch2/reporters/catch_reporter_tap.cpp
++++ b/src/catch2/reporters/catch_reporter_tap.cpp
+@@ -216,6 +216,7 @@ namespace Catch {
+     } // End anonymous namespace
+ 
+     void TAPReporter::testRunStarting( TestRunInfo const& ) {
++        m_syntheticAssertions = 0;
+         if ( m_config->testSpec().hasFilters() ) {
+             m_stream << "# filters: " << m_config->testSpec() << '\n';
+         }
+@@ -244,17 +245,31 @@ namespace Catch {
+     }
+ 
+     void TAPReporter::printAssertion( BufferedAssertion const& assertion,
+-                                      ColourImpl* colour ) {
++                                      ColourImpl* colour,
++                                      bool acceptedFailure ) {
+         ++counter;
+ 
+         m_stream << "# " << assertion.testName << '\n';
+         TapAssertionPrinter printer(
+             m_stream, assertion.stats, counter, colour );
+         printer.print();
++        if ( acceptedFailure &&
++             !assertion.stats.assertionResult.isOk() ) {
++            m_stream << " # TODO accepted failure";
++        }
+ 
+         m_stream << '\n' << std::flush;
+     }
+ 
++    void TAPReporter::printUnexpectedPassFailure() {
++        ++counter;
++        ++m_syntheticAssertions;
++        m_stream << "# " << currentTestCaseInfo->name << '\n'
++                 << "not ok " << counter
++                 << " - test case passed but was expected to fail "
++                    "([!shouldfail])\n";
++    }
++
+     void TAPReporter::testCaseAttemptStarting( TestCaseAttemptInfo const& ) {
+         m_bufferedAssertions.clear();
+     }
+@@ -262,8 +277,20 @@ namespace Catch {
+     void TAPReporter::testCaseAttemptEnded(
+         TestCaseAttemptStats const& attemptStats ) {
+         if ( attemptStats.isFinal ) {
++            auto const acceptedFailure =
++                attemptStats.totals.testCases.failedButOk > 0;
++            bool reportedFailure = false;
+             for ( auto const& assertion : m_bufferedAssertions ) {
+-                printAssertion( assertion, m_colour.get() );
++                reportedFailure =
++                    reportedFailure ||
++                    !assertion.stats.assertionResult.isOk();
++                printAssertion( assertion,
++                                m_colour.get(),
++                                acceptedFailure );
++            }
++            if ( attemptStats.totals.testCases.failed > 0 &&
++                 !reportedFailure ) {
++                printUnexpectedPassFailure();
+             }
+         } else {
+             auto diagnosticCounter = counter;
+@@ -289,7 +316,9 @@ namespace Catch {
+     }
+ 
+     void TAPReporter::testRunEnded(TestRunStats const& _testRunStats) {
+-        m_stream << "1.." << _testRunStats.totals.assertions.total();
++        m_stream << "1.."
++                 << _testRunStats.totals.assertions.total() +
++                        m_syntheticAssertions;
+         if (_testRunStats.totals.testCases.total() == 0) {
+             m_stream << " # Skipped: No tests ran.";
+         }
+diff --git a/src/catch2/reporters/catch_reporter_tap.hpp b/src/catch2/reporters/catch_reporter_tap.hpp
+index 56f1165d..795e3599 100644
+--- a/src/catch2/reporters/catch_reporter_tap.hpp
++++ b/src/catch2/reporters/catch_reporter_tap.hpp
+@@ -54,9 +54,12 @@ namespace Catch {
+         };
+ 
+         void printAssertion( BufferedAssertion const& assertion,
+-                             ColourImpl* colour );
++                             ColourImpl* colour,
++                             bool acceptedFailure = false );
++        void printUnexpectedPassFailure();
+ 
+         std::size_t counter = 0;
++        std::size_t m_syntheticAssertions = 0;
+         std::vector<BufferedAssertion> m_bufferedAssertions;
+     };
+ 
+diff --git a/src/catch2/reporters/catch_reporter_teamcity.cpp b/src/catch2/reporters/catch_reporter_teamcity.cpp
+index 0e1cac48..a69b20e8 100644
+--- a/src/catch2/reporters/catch_reporter_teamcity.cpp
++++ b/src/catch2/reporters/catch_reporter_teamcity.cpp
+@@ -116,6 +116,7 @@ namespace Catch {
+             }
+ 
+             ReusableStringStream serviceMessage;
++            bool isFailure = false;
+             if ( result.getResultType() == ResultWas::ExplicitSkip ) {
+                 serviceMessage << "##teamcity[testIgnored";
+             } else if ( currentTestCaseInfo->okToFail() ) {
+@@ -123,6 +124,7 @@ namespace Catch {
+                 serviceMessage << "##teamcity[testIgnored";
+             } else {
+                 serviceMessage << "##teamcity[testFailed";
++                isFailure = true;
+             }
+             serviceMessage
+                 << " name='" << escape( currentTestCaseInfo->name ) << '\''
+@@ -130,7 +132,7 @@ namespace Catch {
+ 
+             if ( m_config->retryFailed() > 0 ) {
+                 m_bufferedAssertions.push_back(
+-                    { serviceMessage.str(), msg.str() } );
++                    { serviceMessage.str(), msg.str(), isFailure } );
+             } else {
+                 m_stream << serviceMessage.str();
+             }
+@@ -154,8 +156,17 @@ namespace Catch {
+     void TeamCityReporter::testCaseAttemptEnded(
+         TestCaseAttemptStats const& attemptStats ) {
+         if ( attemptStats.isFinal ) {
++            bool reportedFailure = false;
+             for ( auto const& assertion : m_bufferedAssertions ) {
+                 m_stream << assertion.serviceMessage;
++                reportedFailure = reportedFailure || assertion.isFailure;
++            }
++            if ( attemptStats.totals.testCases.failed > 0 &&
++                 !reportedFailure ) {
++                m_stream << "##teamcity[testFailed name='"
++                         << escape( currentTestCaseInfo->name )
++                         << "' message='Test case passed but was expected "
++                            "to fail (|[!shouldfail|])']\n";
+             }
+         } else {
+             for ( auto const& assertion : m_bufferedAssertions ) {
+diff --git a/src/catch2/reporters/catch_reporter_teamcity.hpp b/src/catch2/reporters/catch_reporter_teamcity.hpp
+index 7e8356cd..8c62baf0 100644
+--- a/src/catch2/reporters/catch_reporter_teamcity.hpp
++++ b/src/catch2/reporters/catch_reporter_teamcity.hpp
+@@ -63,6 +63,7 @@ namespace Catch {
+         struct BufferedAssertion {
+             std::string serviceMessage;
+             std::string diagnostic;
++            bool isFailure;
+         };
+ 
+         void printSectionHeader(std::ostream& os);
+diff --git a/tests/TestScripts/testRetryFailed.py b/tests/TestScripts/testRetryFailed.py
+index 072ee220..089a9250 100644
+--- a/tests/TestScripts/testRetryFailed.py
++++ b/tests/TestScripts/testRetryFailed.py
+@@ -1282,6 +1282,45 @@ def main():
+         assert "Attempt 1 of 3 failed:" in junit_throw_once_out.text
+         assert "throw-once failure" in junit_throw_once_out.text
+ 
++        junit_shouldfail_pass = run_reporter(
++            test_exe,
++            output_dir,
++            "JUnit",
++            "junit-shouldfail-pass",
++            ("--retry-failed", "2"),
++            "[.retry-shouldfail-pass]",
++            42,
++        )
++        junit_shouldfail_suite = only_junit_suite(junit_shouldfail_pass)
++        assert junit_shouldfail_suite.get("errors") == "0"
++        assert junit_shouldfail_suite.get("failures") == "1"
++        assert junit_shouldfail_suite.get("tests") == "1"
++        junit_shouldfail_failures = junit_shouldfail_suite.findall(
++            ".//failure"
++        )
++        assert len(junit_shouldfail_failures) == 1, junit_shouldfail_pass
++        assert junit_shouldfail_failures[0].get("type") == "!shouldfail"
++        assert junit_shouldfail_suite.findall(".//error") == []
++
++        junit_mayfail = run_reporter(
++            test_exe,
++            output_dir,
++            "JUnit",
++            "junit-mayfail",
++            ("--retry-failed", "2"),
++            "[.retry-mayfail]",
++        )
++        junit_mayfail_suite = only_junit_suite(junit_mayfail)
++        assert junit_mayfail_suite.get("errors") == "0", junit_mayfail
++        assert junit_mayfail_suite.get("failures") == "0", junit_mayfail
++        assert junit_mayfail_suite.get("skipped") == "1", junit_mayfail
++        assert junit_mayfail_suite.findall(".//failure") == []
++        assert junit_mayfail_suite.findall(".//error") == []
++        assert len(junit_mayfail_suite.findall(".//skipped")) == 1
++        junit_mayfail_out = junit_mayfail_suite.find("./testcase/system-out")
++        assert "Accepted failure:" in junit_mayfail_out.text
++        assert "CHECK( false )" in junit_mayfail_out.text
++
+         sonar_flaky = run_reporter(
+             test_exe,
+             output_dir,
+@@ -1333,6 +1372,39 @@ def main():
+         assert sonar_hyphen_root.findall(".//failure") == []
+         assert sonar_hyphen_root.findall(".//error") == []
+ 
++        sonar_shouldfail_pass = run_reporter(
++            test_exe,
++            output_dir,
++            "SonarQube",
++            "sonar-shouldfail-pass",
++            ("--retry-failed", "2"),
++            "[.retry-shouldfail-pass]",
++            42,
++        )
++        sonar_shouldfail_root, _ = parse_sonarqube(sonar_shouldfail_pass)
++        sonar_shouldfail_failures = sonar_shouldfail_root.findall(
++            ".//failure"
++        )
++        assert len(sonar_shouldfail_failures) == 1, sonar_shouldfail_pass
++        assert (
++            sonar_shouldfail_failures[0].get("message")
++            == "test case passed but was expected to fail"
++        )
++        assert sonar_shouldfail_root.findall(".//error") == []
++
++        sonar_mayfail = run_reporter(
++            test_exe,
++            output_dir,
++            "SonarQube",
++            "sonar-mayfail",
++            ("--retry-failed", "2"),
++            "[.retry-mayfail]",
++        )
++        sonar_mayfail_root, _ = parse_sonarqube(sonar_mayfail)
++        assert sonar_mayfail_root.findall(".//failure") == []
++        assert sonar_mayfail_root.findall(".//error") == []
++        assert len(sonar_mayfail_root.findall(".//skipped")) == 1
++
+         teamcity_omitted = run_reporter(
+             test_exe,
+             output_dir,
+@@ -1390,6 +1462,31 @@ def main():
+                 "out='Attempt {} of 3 failed:".format(attempt)
+             ) == 1, teamcity_exhausted
+ 
++        teamcity_shouldfail_pass = run_reporter(
++            test_exe,
++            output_dir,
++            "TeamCity",
++            "teamcity-shouldfail-pass",
++            ("--retry-failed", "2"),
++            "[.retry-shouldfail-pass]",
++            42,
++        )
++        assert teamcity_shouldfail_pass.count(
++            "##teamcity[testFailed name='retry shouldfail unexpected pass'"
++        ) == 1, teamcity_shouldfail_pass
++        assert "passed but was expected to fail" in teamcity_shouldfail_pass
++
++        teamcity_mayfail = run_reporter(
++            test_exe,
++            output_dir,
++            "TeamCity",
++            "teamcity-mayfail",
++            ("--retry-failed", "2"),
++            "[.retry-mayfail]",
++        )
++        assert "##teamcity[testFailed" not in teamcity_mayfail
++        assert teamcity_mayfail.count("##teamcity[testIgnored") == 1
++
+         tap_omitted = run_reporter(
+             test_exe,
+             output_dir,
+@@ -1473,6 +1570,61 @@ def main():
+             if line.startswith("1..")
+         ] == ["1..1"], tap_exhausted
+ 
++        tap_shouldfail_pass = run_reporter(
++            test_exe,
++            output_dir,
++            "TAP",
++            "tap-shouldfail-pass",
++            ("--retry-failed", "2"),
++            "[.retry-shouldfail-pass]",
++            42,
++            expected_stdout=(
++                "shouldfail-pass execution=1\n"
++                "shouldfail-pass execution=2\n"
++                "shouldfail-pass execution=3\n"
++            ),
++        )
++        tap_shouldfail_points = [
++            line
++            for line in tap_shouldfail_pass.splitlines()
++            if line.startswith(("ok ", "not ok "))
++        ]
++        assert len(tap_shouldfail_points) == 2, tap_shouldfail_pass
++        assert tap_shouldfail_points[0].startswith("ok 1 -"), (
++            tap_shouldfail_pass
++        )
++        assert tap_shouldfail_points[1] == (
++            "not ok 2 - test case passed but was expected to fail "
++            "([!shouldfail])"
++        ), tap_shouldfail_pass
++        assert [
++            line
++            for line in tap_shouldfail_pass.splitlines()
++            if line.startswith("1..")
++        ] == ["1..2"], tap_shouldfail_pass
++
++        tap_mayfail = run_reporter(
++            test_exe,
++            output_dir,
++            "TAP",
++            "tap-mayfail",
++            ("--retry-failed", "2"),
++            "[.retry-mayfail]",
++        )
++        tap_mayfail_points = [
++            line
++            for line in tap_mayfail.splitlines()
++            if line.startswith(("ok ", "not ok "))
++        ]
++        assert tap_mayfail_points == [
++            "not ok 1 - false # TODO accepted failure"
++        ], tap_mayfail
++        assert [
++            line
++            for line in tap_mayfail.splitlines()
++            if line.startswith("1..")
++        ] == ["1..1"], tap_mayfail
++
+         automake_flaky = run_reporters(
+             test_exe,
+             output_dir,
+-- 
+2.56.0.windows.1
+
