@@ -162,7 +162,7 @@ Update this table as work progresses. A phase is complete only after its gate pa
 | 6. Implement in small tested slices | Catch2 commits and task evidence | Complete — T00–T14 done (see `artifacts/06-tasks.md`) |
 | 7. Review with fresh context | `artifacts/08-review.md` | Complete — all findings resolved; evidence recorded |
 | 8. Run full validation and convergence | `artifacts/09-validation.md` | Complete — basic 92/92, all 157/157; final retry-fatal rerun passed |
-| 9. Prepare the handoff and reflect | patch, implementation notes, `10-retrospective.md` | In progress — branch, patch series, and retrospective prepared; final human review remains |
+| 9. Prepare the handoff and reflect | patch, implementation notes, `10-retrospective.md` | Complete — reviewed and committed as `6803125`; 19-patch series reproduces the validated branch |
 
 ## Phase 0: Frame the Work and Establish Safety
 
@@ -591,20 +591,20 @@ Produce a reproducible submission and turn the completed work into reusable lear
 
 The workthrough is complete only when all of the following are true:
 
-- [ ] The task contract, baseline, codebase map, specification, clarifications, plan, tasks, decisions, review, validation, and retrospective are present and reviewed.
-- [ ] Catch2 `v3.16.0` is the proven implementation baseline.
-- [ ] Every assignment requirement maps to implementation and automated evidence.
-- [ ] Retry-disabled behavior remains compatible with the baseline.
-- [ ] Sections, generators, fixtures, reporters, totals, tags, and abort behavior are covered.
-- [ ] Focused, basic, approval, and broader relevant tests pass, or an environmental limitation is explicitly documented.
-- [ ] Machine-readable reporter output is parsed successfully.
-- [ ] The final diff contains no unrelated changes, build output, caches, or secrets.
-- [ ] `IMPLEMENTATION_NOTES.md` reports only commands actually run.
-- [ ] A fresh-context review has no unresolved high-severity findings.
-- [ ] The final patch or branch is reproducible from the recorded baseline.
+- [x] The task contract, baseline, codebase map, specification, clarifications, plan, tasks, decisions, review, validation, and retrospective are present and reviewed.
+- [x] Catch2 `v3.16.0` is the proven implementation baseline.
+- [x] Every assignment requirement maps to implementation and automated evidence.
+- [x] Retry-disabled behavior remains compatible with the baseline.
+- [x] Sections, generators, fixtures, reporters, totals, tags, and abort behavior are covered.
+- [x] Focused, basic, approval, and broader relevant tests pass, or an environmental limitation is explicitly documented.
+- [x] Machine-readable reporter output is parsed successfully.
+- [x] The final diff contains no unrelated changes, build output, caches, or secrets.
+- [x] `IMPLEMENTATION_NOTES.md` reports only commands actually run.
+- [x] A fresh-context review has no unresolved high-severity findings.
+- [x] The final patch or branch is reproducible from the recorded baseline.
 
 ## Current Status and Next Step
 
-Phases 0–8 are complete. Phase 9 handoff materials are prepared for human
-review. After review, commit the approved course-side handoff changes; do not
-push unless explicitly requested.
+Phases 0–9 are complete. The course handoff is committed as `6803125`, and
+Catch2 is reproducible from `v3.16.0` with the 19 exported patches. No push or
+external publication was made.
