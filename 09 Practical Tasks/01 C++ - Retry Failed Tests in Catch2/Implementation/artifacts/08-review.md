@@ -6,15 +6,19 @@ Resolution date: 2026-10-05
 
 Second review date: 2026-10-05
 
+H-2 resolution date: 2026-10-05
+
 Reviewed Catch2 revision: `9037e6faa6638b160d2f24e240f6b671d979c99d`
 
 Resolved Catch2 revision: `b19a1b75c19b6f85d438e0653855a20f6d5ef95d`
+
+Current Catch2 revision: `0dd78e550ee4b672524c277ef1a79af282b97686`
 
 Baseline: `v3.16.0` (`fd79eadb5bc1760e7cbae12fd45b0d0040d1bb73`)
 
 ## Gate Status
 
-**Not passed after the second review.** The original H-1 and M-1 findings remain resolved, but the broader outcome matrix exposed one new high-severity and two new medium-severity defects. One low-severity documentation/evidence inconsistency is also open. No Catch2 production or test file was changed during the second review.
+**Not passed yet.** H-1, M-1, and H-2 are resolved. M-2 and M-3 remain open, together with the low-severity L-1 documentation/evidence inconsistency. No Catch2 production or test file was changed during the read-only second review; H-2 was fixed afterwards in a separate commit.
 
 ## Findings
 
@@ -80,7 +84,7 @@ This behaviour exists in the reporter's assertion-oriented path, but retry-enabl
 
 **Severity:** High
 
-**Status:** Open
+**Status:** Resolved
 
 `-w NoAssertions` creates a retryable failure by incrementing the failed assertion count directly in `RunContext::testForMissingAssertions` (`src/catch2/internal/catch_run_context.cpp:643-652`). It does not emit an `assertionEnded` event. The four assertion-buffering reporters therefore cannot distinguish this outcome from the unexpected `[!shouldfail]` pass fixed by H-1:
 
@@ -109,6 +113,8 @@ A disposable deterministic case that had no assertions on attempt 1 and passed o
 **Impact:** TAP consumers can reject the result as an inconsistent stream, while all four protocols provide a false failure reason. A flaky pass can also erase the only meaningful diagnostic for its superseded missing-assertion failure. This violates R-5, E-8, and the machine-readable reporter contract.
 
 **Required resolution:** carry or derive the semantic failure reason independently of failed assertion events, preserve `missingAssertions` diagnostics for superseded attempts, and make TAP's plan equal the number of emitted test points. Add exhausted and fail-then-pass `NoAssertions` scenarios for JUnit, SonarQube, TeamCity, and TAP.
+
+**Resolution:** Cumulative reporters now derive missing-assertion diagnostics from each attempt's stored `SectionStats`, while TeamCity and TAP capture the same data from `sectionEnded`. JUnit and SonarQube emit a `NoAssertions` failure instead of the `[!shouldfail]` fallback; TeamCity emits the matching service message; TAP emits the already-accounted missing-assertion point without incrementing its synthetic-point count, so the plan remains exact. Superseded attempts retain the reason in `system-out`, XML comments, TeamCity `testStdErr`, or TAP diagnostics. Exhausted and fail-then-pass scenarios cover all four protocols, and the existing `[!shouldfail]` cases now also require explicit superseded reasons.
 
 ### M-2 — Console and compact report final skipped or accepted outcomes as failed
 
@@ -161,7 +167,7 @@ A single deterministic test containing three final `CHECK(false)` assertions, ru
 ## Verification Gaps
 
 - Machine-readable special-tag coverage now covers exhausted unexpected `[!shouldfail]` passes and accepted `[!mayfail]` failures, but not a transition from unexpected pass to accepted `[!shouldfail]` failure.
-- `NoAssertions` is named as retryable by R-5 but has no retry or reporter scenario. This gap allowed H-2 through both full suites.
+- Exhausted and fail-then-pass `NoAssertions` paths are now parser/protocol-tested in JUnit, SonarQube, TeamCity, and TAP. Nested-section missing-assertion combinations remain outside the focused matrix.
 - No test ends a retried logical test case as skipped or accepted failure, so the human-reporter branch in M-2 is untested.
 - JUnit scenarios use one final assertion, so assertion-derived suite counters happen to equal logical test-case counters and M-3 is hidden.
 - Fatal-path structure is parser-tested only for JUnit. During review, XML output from the fatal fixture remained well-formed; JSON and Automake wrote no stdout before Windows terminated the process. This was not classified as a defect because fatal reporting is explicitly best-effort and the review did not establish a regression from `v3.16.0`, but it remains an unverified compatibility area.
@@ -171,7 +177,7 @@ A single deterministic test containing three final `CHECK(false)` assertions, ru
 
 The main scenario driver generally uses exact event sequences, exact totals, real JSON/XML parsers, negative assertions, exit-code checks, and fresh child processes. It would fail for common production regressions such as missing retries, leaked retry budgets, wrong final-only totals, broken attempt numbering, malformed JSON/XML, or superseded failures counted by the ordinary flaky scenarios. T03 also recorded an actual red harness run before its assertion was corrected.
 
-The first review found that reporter cases used ordinary failed assertions while special tags were exercised only through the recorder. H-1/M-1 added direct special-tag reporter coverage, but the second review showed that the matrix is still organized mainly by assertion outcome. It does not cross retry history with every final outcome, failures created without assertion events, or multiple final assertions. Those missing dimensions explain H-2, M-2, and M-3.
+The first review found that reporter cases used ordinary failed assertions while special tags were exercised only through the recorder. H-1/M-1 added direct special-tag reporter coverage, and H-2 now adds direct failures-without-assertion-events coverage. The matrix still does not cross retry history with every final outcome or multiple final assertions; those missing dimensions explain the still-open M-2 and M-3.
 
 ## Review Evidence
 
@@ -185,6 +191,9 @@ The first review found that reporter cases used ordinary failed assertions while
 - The second review re-read the complete final 43-file `v3.16.0..b19a1b75` diff and reran the focused cumulative/retry/amalgamation group: 5/5 passed.
 - Reproduced H-2 directly with the built `SelfTest.exe` and all affected reporters. Used a disposable external test executable linked against the final Catch2 libraries to reproduce fail-to-skip, unexpected-pass-to-accepted-failure, fail-to-pass `NoAssertions`, and multi-assertion JUnit scenarios without modifying the Catch2 checkout.
 - `git diff --check v3.16.0..HEAD` passed after the second review, both tracked repositories remained clean, and no unapproved baseline was present.
+- Resolved H-2 in `0dd78e55`: added deterministic exhausted and fail-to-pass `NoAssertions` cases plus direct JUnit, SonarQube, TeamCity, and TAP assertions. Strengthened the `[!shouldfail]` cases so superseded attempts cannot regress to empty diagnostics.
+- Regenerated the amalgamated files and rebuilt the configured Windows trees. The focused cumulative/retry/amalgamation group passed 5/5, the `all` preset passed 157/157, and the `basic` preset passed 92/92. No unapproved baseline was produced; the only build warnings were the four known baseline MSVC `D9025` warnings.
+- Applied all 16 exported patches to a separate clean `v3.16.0` worktree. Its tree ID, `186a86030e903d37ae405d9126a6a1b4f919c3b1`, exactly matched the implementation branch; the disposable worktree was then removed.
 
 ## Resolution Log
 
@@ -192,7 +201,7 @@ The first review found that reporter cases used ordinary failed assertions while
 | --- | --- | --- |
 | H-1 | Resolved in `b19a1b75` (`0015-Report-semantic-retry-outcomes-in-machine-reporters.patch`) | New JUnit, SonarQube, TeamCity, and TAP semantic-failure scenarios pass; focused group 5/5; all preset 157/157 |
 | M-1 | Resolved in `b19a1b75` (`0015-Report-semantic-retry-outcomes-in-machine-reporters.patch`) | New accepted-failure scenarios pass for all four reporters; basic preset 92/92; all preset 157/157 |
-| H-2 | Open | `NoAssertions` direct reproduction: false `[!shouldfail]` reason in four reporters, TAP one point with plan `1..2`, superseded reason lost |
+| H-2 | Resolved in `0dd78e55` (`0016-Report-retry-failures-without-assertion-events.patch`) | Exhausted and fail-to-pass `NoAssertions` scenarios pass for JUnit, SonarQube, TeamCity, and TAP; TAP emits one point with plan `1..1`; focused group 5/5; all preset 157/157; basic preset 92/92 |
 | M-2 | Open | Disposable fail-to-skip and unexpected-pass-to-accepted-failure cases contradict console/compact final lines |
 | M-3 | Open | One JUnit child case with three final failures reports `tests="3" failures="3"` |
 | L-1 | Open | Documentation and implementation-note evidence inspected against post-review behavior and commit history |
