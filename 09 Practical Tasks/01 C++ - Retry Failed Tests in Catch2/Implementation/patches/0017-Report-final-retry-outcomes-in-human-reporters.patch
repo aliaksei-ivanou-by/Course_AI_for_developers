@@ -1,0 +1,334 @@
+From 5669b8e64e6e86fcbd269e7d2c4aadf5745acd8d Mon Sep 17 00:00:00 2001
+From: Aliaksei Ivanou <aliaksei.ivanou@innowise.com>
+Date: Mon, 5 Oct 2026 08:30:01 +0200
+Subject: [PATCH] Report final retry outcomes in human reporters
+
+---
+ extras/catch_amalgamated.cpp                  |  28 ++++-
+ extras/catch_amalgamated.hpp                  |   2 +-
+ .../reporters/catch_reporter_compact.cpp      |  13 +-
+ .../reporters/catch_reporter_console.cpp      |  13 +-
+ tests/ExtraTests/X96-RetryFailed.cpp          |  18 +++
+ tests/TestScripts/testRetryFailed.py          | 111 ++++++++++++++++++
+ 6 files changed, 175 insertions(+), 10 deletions(-)
+
+diff --git a/extras/catch_amalgamated.cpp b/extras/catch_amalgamated.cpp
+index bc3be188..4b0cee27 100644
+--- a/extras/catch_amalgamated.cpp
++++ b/extras/catch_amalgamated.cpp
+@@ -7,7 +7,7 @@
+ // SPDX-License-Identifier: BSL-1.0
+ 
+ //  Catch v3.16.0
+-//  Generated: 2026-10-05 08:08:04.858157
++//  Generated: 2026-10-05 08:27:55.682821
+ //  ----------------------------------------------------------
+ //  This file is an amalgamation of multiple different files.
+ //  You probably shouldn't edit it directly.
+@@ -9798,14 +9798,23 @@ private:
+             if ( testCaseStats.attemptCount > 1 ) {
+                 m_stream << "Test case '" << testCaseStats.testInfo->name
+                          << "' ";
+-                if ( testCaseStats.isFlaky ) {
++                auto const& finalOutcome = testCaseStats.totals.testCases;
++                if ( finalOutcome.passed > 0 ) {
+                     m_stream << "passed on attempt "
+                              << testCaseStats.attemptCount << " of "
+                              << testCaseStats.maxAttempts << " (flaky)\n";
+-                } else {
++                } else if ( finalOutcome.failed > 0 ) {
+                     m_stream << "failed after " << testCaseStats.attemptCount
+                              << " of " << testCaseStats.maxAttempts
+                              << " attempts\n";
++                } else if ( finalOutcome.skipped > 0 ) {
++                    m_stream << "was skipped on attempt "
++                             << testCaseStats.attemptCount << " of "
++                             << testCaseStats.maxAttempts << '\n';
++                } else if ( finalOutcome.failedButOk > 0 ) {
++                    m_stream << "failed as expected on attempt "
++                             << testCaseStats.attemptCount << " of "
++                             << testCaseStats.maxAttempts << '\n';
+                 }
+                 m_stream << std::flush;
+             }
+@@ -10342,12 +10351,21 @@ void ConsoleReporter::testCaseEnded(TestCaseStats const& _testCaseStats) {
+     m_tablePrinter->close();
+     if ( _testCaseStats.attemptCount > 1 ) {
+         m_stream << "Test case '" << _testCaseStats.testInfo->name << "' ";
+-        if ( _testCaseStats.isFlaky ) {
++        auto const& finalOutcome = _testCaseStats.totals.testCases;
++        if ( finalOutcome.passed > 0 ) {
+             m_stream << "passed on attempt " << _testCaseStats.attemptCount
+                      << " of " << _testCaseStats.maxAttempts << " (flaky)\n";
+-        } else {
++        } else if ( finalOutcome.failed > 0 ) {
+             m_stream << "failed after " << _testCaseStats.attemptCount
+                      << " of " << _testCaseStats.maxAttempts << " attempts\n";
++        } else if ( finalOutcome.skipped > 0 ) {
++            m_stream << "was skipped on attempt "
++                     << _testCaseStats.attemptCount << " of "
++                     << _testCaseStats.maxAttempts << '\n';
++        } else if ( finalOutcome.failedButOk > 0 ) {
++            m_stream << "failed as expected on attempt "
++                     << _testCaseStats.attemptCount << " of "
++                     << _testCaseStats.maxAttempts << '\n';
+         }
+         m_stream << std::flush;
+     }
+diff --git a/extras/catch_amalgamated.hpp b/extras/catch_amalgamated.hpp
+index 6fccc596..b45f1dcb 100644
+--- a/extras/catch_amalgamated.hpp
++++ b/extras/catch_amalgamated.hpp
+@@ -7,7 +7,7 @@
+ // SPDX-License-Identifier: BSL-1.0
+ 
+ //  Catch v3.16.0
+-//  Generated: 2026-10-05 08:08:03.186312
++//  Generated: 2026-10-05 08:27:55.654902
+ //  ----------------------------------------------------------
+ //  This file is an amalgamation of multiple different files.
+ //  You probably shouldn't edit it directly.
+diff --git a/src/catch2/reporters/catch_reporter_compact.cpp b/src/catch2/reporters/catch_reporter_compact.cpp
+index 56da5e0f..6067b7d3 100644
+--- a/src/catch2/reporters/catch_reporter_compact.cpp
++++ b/src/catch2/reporters/catch_reporter_compact.cpp
+@@ -271,14 +271,23 @@ private:
+             if ( testCaseStats.attemptCount > 1 ) {
+                 m_stream << "Test case '" << testCaseStats.testInfo->name
+                          << "' ";
+-                if ( testCaseStats.isFlaky ) {
++                auto const& finalOutcome = testCaseStats.totals.testCases;
++                if ( finalOutcome.passed > 0 ) {
+                     m_stream << "passed on attempt "
+                              << testCaseStats.attemptCount << " of "
+                              << testCaseStats.maxAttempts << " (flaky)\n";
+-                } else {
++                } else if ( finalOutcome.failed > 0 ) {
+                     m_stream << "failed after " << testCaseStats.attemptCount
+                              << " of " << testCaseStats.maxAttempts
+                              << " attempts\n";
++                } else if ( finalOutcome.skipped > 0 ) {
++                    m_stream << "was skipped on attempt "
++                             << testCaseStats.attemptCount << " of "
++                             << testCaseStats.maxAttempts << '\n';
++                } else if ( finalOutcome.failedButOk > 0 ) {
++                    m_stream << "failed as expected on attempt "
++                             << testCaseStats.attemptCount << " of "
++                             << testCaseStats.maxAttempts << '\n';
+                 }
+                 m_stream << std::flush;
+             }
+diff --git a/src/catch2/reporters/catch_reporter_console.cpp b/src/catch2/reporters/catch_reporter_console.cpp
+index 120747e8..93df5eb2 100644
+--- a/src/catch2/reporters/catch_reporter_console.cpp
++++ b/src/catch2/reporters/catch_reporter_console.cpp
+@@ -536,12 +536,21 @@ void ConsoleReporter::testCaseEnded(TestCaseStats const& _testCaseStats) {
+     m_tablePrinter->close();
+     if ( _testCaseStats.attemptCount > 1 ) {
+         m_stream << "Test case '" << _testCaseStats.testInfo->name << "' ";
+-        if ( _testCaseStats.isFlaky ) {
++        auto const& finalOutcome = _testCaseStats.totals.testCases;
++        if ( finalOutcome.passed > 0 ) {
+             m_stream << "passed on attempt " << _testCaseStats.attemptCount
+                      << " of " << _testCaseStats.maxAttempts << " (flaky)\n";
+-        } else {
++        } else if ( finalOutcome.failed > 0 ) {
+             m_stream << "failed after " << _testCaseStats.attemptCount
+                      << " of " << _testCaseStats.maxAttempts << " attempts\n";
++        } else if ( finalOutcome.skipped > 0 ) {
++            m_stream << "was skipped on attempt "
++                     << _testCaseStats.attemptCount << " of "
++                     << _testCaseStats.maxAttempts << '\n';
++        } else if ( finalOutcome.failedButOk > 0 ) {
++            m_stream << "failed as expected on attempt "
++                     << _testCaseStats.attemptCount << " of "
++                     << _testCaseStats.maxAttempts << '\n';
+         }
+         m_stream << std::flush;
+     }
+diff --git a/tests/ExtraTests/X96-RetryFailed.cpp b/tests/ExtraTests/X96-RetryFailed.cpp
+index 30853689..7b637df2 100644
+--- a/tests/ExtraTests/X96-RetryFailed.cpp
++++ b/tests/ExtraTests/X96-RetryFailed.cpp
+@@ -386,10 +386,12 @@ namespace {
+     unsigned int doubleHyphenExecutions = 0;
+     unsigned int failTwiceExecutions = 0;
+     unsigned int alwaysFailExecutions = 0;
++    unsigned int failThenSkipExecutions = 0;
+     unsigned int independentXExecutions = 0;
+     unsigned int independentYExecutions = 0;
+     unsigned int noAssertionsFlakyExecutions = 0;
+     unsigned int shouldFailPassExecutions = 0;
++    unsigned int shouldFailTransitionExecutions = 0;
+     unsigned int abortBudgetFlakyExecutions = 0;
+     unsigned int abortShouldFailExecutions = 0;
+     unsigned int shardAExecutions = 0;
+@@ -661,6 +663,16 @@ TEST_CASE( "retry failure followed by skip", "[.retry-fail-skip]" ) {
+     SKIP( "failure takes precedence over skip" );
+ }
+ 
++TEST_CASE( "retry failure then skipped outcome",
++           "[.retry-fail-then-skip]" ) {
++    ++failThenSkipExecutions;
++    if ( failThenSkipExecutions == 1 ) {
++        CHECK( false );
++    } else {
++        SKIP( "second attempt skips" );
++    }
++}
++
+ TEST_CASE( "retry mayfail failure",
+            "[.retry-mayfail][.retry-outcomes][!mayfail]" ) {
+     CHECK( false );
+@@ -679,6 +691,12 @@ TEST_CASE( "retry shouldfail unexpected pass",
+     CHECK( true );
+ }
+ 
++TEST_CASE( "retry shouldfail pass then expected failure",
++           "[.retry-shouldfail-transition][!shouldfail]" ) {
++    ++shouldFailTransitionExecutions;
++    CHECK( shouldFailTransitionExecutions < 2 );
++}
++
+ TEST_CASE( "retry abort 1 fails", "[.retry-abort]" ) {
+     CHECK( false );
+ }
+diff --git a/tests/TestScripts/testRetryFailed.py b/tests/TestScripts/testRetryFailed.py
+index 4a5c9b05..718d02fa 100644
+--- a/tests/TestScripts/testRetryFailed.py
++++ b/tests/TestScripts/testRetryFailed.py
+@@ -551,6 +551,39 @@ def main():
+                 in line
+             ), line
+ 
++        failure_then_skipped_outcome = run_retry_scenario(
++            test_exe,
++            output_dir,
++            "failure-then-skipped-outcome",
++            "[.retry-fail-then-skip]",
++            2,
++            4,
++        )
++        assert_attempts(
++            failure_then_skipped_outcome,
++            "retry failure then skipped outcome",
++            [1, 2],
++            3,
++            False,
++            "skipped",
++        )
++        failure_then_skip_ends = event_lines(
++            failure_then_skipped_outcome,
++            "test-case-attempt-ended ",
++            "retry failure then skipped outcome",
++        )
++        assert "test-cases={passed=0,failed=1,failed-but-ok=0,skipped=0}" in (
++            failure_then_skip_ends[0]
++        )
++        assert "test-cases={passed=0,failed=0,failed-but-ok=0,skipped=1}" in (
++            failure_then_skip_ends[1]
++        )
++        assert_run_totals(
++            failure_then_skipped_outcome,
++            "passed=0,failed=0,failed-but-ok=0,skipped=1",
++            "passed=0,failed=0,failed-but-ok=0,skipped=1",
++        )
++
+         mayfail = run_retry_scenario(
+             test_exe,
+             output_dir,
+@@ -609,6 +642,38 @@ def main():
+             )
+         ), shouldfail_pass
+ 
++        shouldfail_transition = run_retry_scenario(
++            test_exe,
++            output_dir,
++            "shouldfail-transition",
++            "[.retry-shouldfail-transition]",
++            2,
++        )
++        assert_attempts(
++            shouldfail_transition,
++            "retry shouldfail pass then expected failure",
++            [1, 2],
++            3,
++            False,
++            "failed-but-ok",
++        )
++        shouldfail_transition_ends = event_lines(
++            shouldfail_transition,
++            "test-case-attempt-ended ",
++            "retry shouldfail pass then expected failure",
++        )
++        assert "assertions={passed=1,failed=1,failed-but-ok=0,skipped=0}" in (
++            shouldfail_transition_ends[0]
++        )
++        assert "assertions={passed=0,failed=0,failed-but-ok=1,skipped=0}" in (
++            shouldfail_transition_ends[1]
++        )
++        assert_run_totals(
++            shouldfail_transition,
++            "passed=0,failed=0,failed-but-ok=1,skipped=0",
++            "passed=0,failed=0,failed-but-ok=1,skipped=0",
++        )
++
+         outcomes = run_retry_scenario(
+             test_exe,
+             output_dir,
+@@ -1013,6 +1078,52 @@ def main():
+             assert "test cases: 1 | 1 failed" in human_exhausted
+             assert "assertions: 1 | 1 failed" in human_exhausted
+ 
++            human_skipped = run_reporters(
++                test_exe,
++                output_dir,
++                (reporter,),
++                "{}-failure-then-skipped".format(reporter),
++                retry_arguments=("--retry-failed", "2"),
++                test_spec="[.retry-fail-then-skip]",
++                expected_returncode=4,
++            )[0]
++            assert human_skipped.count(
++                "Attempt 1 of 3 failed; retrying test case "
++                "'retry failure then skipped outcome'"
++            ) == 1, human_skipped
++            assert human_skipped.count(
++                "Test case 'retry failure then skipped outcome' "
++                "was skipped on attempt 2 of 3"
++            ) == 1, human_skipped
++            assert (
++                "Test case 'retry failure then skipped outcome' failed after"
++                not in human_skipped
++            ), human_skipped
++            assert "test cases: 1 | 1 skipped" in human_skipped
++
++            human_accepted = run_reporters(
++                test_exe,
++                output_dir,
++                (reporter,),
++                "{}-shouldfail-transition".format(reporter),
++                retry_arguments=("--retry-failed", "2"),
++                test_spec="[.retry-shouldfail-transition]",
++            )[0]
++            assert human_accepted.count(
++                "Attempt 1 of 3 failed; retrying test case "
++                "'retry shouldfail pass then expected failure'"
++            ) == 1, human_accepted
++            assert human_accepted.count(
++                "Test case 'retry shouldfail pass then expected failure' "
++                "failed as expected on attempt 2 of 3"
++            ) == 1, human_accepted
++            assert (
++                "Test case 'retry shouldfail pass then expected failure' "
++                "failed after" not in human_accepted
++            ), human_accepted
++            assert "test cases: 1 | 1 failed as expected" in human_accepted
++            assert "assertions: 1 | 1 failed as expected" in human_accepted
++
+         xml_immediate = run_reporter(
+             test_exe,
+             output_dir,
+-- 
+2.56.0.windows.1
+
