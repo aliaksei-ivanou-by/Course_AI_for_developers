@@ -1,0 +1,319 @@
+From 30ab6617e459ea98fbc27b4c201a73bccb20f213 Mon Sep 17 00:00:00 2001
+From: Aliaksei Ivanou <aliaksei.ivanou@innowise.com>
+Date: Mon, 5 Oct 2026 08:43:08 +0200
+Subject: [PATCH] Count logical retry results in JUnit suites
+
+---
+ extras/catch_amalgamated.cpp                  | 64 +++++++++++++------
+ extras/catch_amalgamated.hpp                  |  2 +-
+ src/catch2/reporters/catch_reporter_junit.cpp | 62 ++++++++++++------
+ tests/ExtraTests/X96-RetryFailed.cpp          | 18 ++++++
+ tests/TestScripts/testRetryFailed.py          | 57 +++++++++++++++++
+ 5 files changed, 165 insertions(+), 38 deletions(-)
+
+diff --git a/extras/catch_amalgamated.cpp b/extras/catch_amalgamated.cpp
+index 4b0cee27..6f07149b 100644
+--- a/extras/catch_amalgamated.cpp
++++ b/extras/catch_amalgamated.cpp
+@@ -7,7 +7,7 @@
+ // SPDX-License-Identifier: BSL-1.0
+ 
+ //  Catch v3.16.0
+-//  Generated: 2026-10-05 08:27:55.682821
++//  Generated: 2026-10-05 08:39:03.739368
+ //  ----------------------------------------------------------
+ //  This file is an amalgamation of multiple different files.
+ //  You probably shouldn't edit it directly.
+@@ -11503,6 +11503,7 @@ namespace Catch {
+ 
+ 
+ #include <cassert>
++#include <cstdint>
+ #include <ctime>
+ #include <algorithm>
+ #include <iomanip>
+@@ -11627,6 +11628,29 @@ namespace Catch {
+             return false;
+         }
+ 
++        bool hasJunitErrorElement(
++            CumulativeReporterBase::SectionNode const& sectionNode ) {
++            for ( auto const& assertionOrBenchmark :
++                  sectionNode.assertionsAndBenchmarks ) {
++                if ( !assertionOrBenchmark.isAssertion() ) { continue; }
++
++                auto const& result =
++                    assertionOrBenchmark.asAssertion().assertionResult;
++                if ( !shouldWriteJunitAssertion( result ) ) { continue; }
++
++                if ( result.getResultType() == ResultWas::ThrewException ||
++                     result.getResultType() ==
++                         ResultWas::FatalErrorCondition ) {
++                    return true;
++                }
++                break;
++            }
++            for ( auto const& child : sectionNode.childSections ) {
++                if ( hasJunitErrorElement( *child ) ) { return true; }
++            }
++            return false;
++        }
++
+         bool hasJunitMissingAssertions(
+             CumulativeReporterBase::SectionNode const& sectionNode ) {
+             if ( sectionNode.stats.missingAssertions ) { return true; }
+@@ -11759,29 +11783,31 @@ namespace Catch {
+ 
+         TestRunStats const& stats = testRunNode.value;
+         xml.writeAttribute( "name"_sr, stats.runInfo.name );
+-        auto failures =
+-            stats.totals.assertions.failed - unexpectedExceptions;
++        auto errors = static_cast<std::uint64_t>( unexpectedExceptions );
++        auto failures = stats.totals.assertions.failed - errors;
++        auto skipped = stats.totals.assertions.skipped;
++        auto tests = stats.totals.assertions.total();
+         if ( m_config->retryFailed() > 0 ) {
+-            auto const accountedFailures = failures + unexpectedExceptions;
+-            if ( stats.totals.testCases.failed > accountedFailures ) {
+-                failures +=
+-                    stats.totals.testCases.failed - accountedFailures;
++            errors = 0;
++            failures = 0;
++            for ( auto const& testCase : testRunNode.children ) {
++                if ( testCase->value.totals.testCases.failed == 0 ) {
++                    continue;
++                }
++                assert( testCase->children.size() == 1 );
++                if ( hasJunitErrorElement( *testCase->children.front() ) ) {
++                    ++errors;
++                } else {
++                    ++failures;
++                }
+             }
++            skipped = stats.totals.testCases.skipped +
++                      stats.totals.testCases.failedButOk;
++            tests = stats.totals.testCases.total();
+         }
+-        xml.writeAttribute( "errors"_sr, unexpectedExceptions );
++        xml.writeAttribute( "errors"_sr, errors );
+         xml.writeAttribute( "failures"_sr, failures );
+-        auto skipped = stats.totals.assertions.skipped;
+-        if ( m_config->retryFailed() > 0 ) {
+-            skipped = ( std::max )(
+-                skipped,
+-                stats.totals.testCases.skipped +
+-                    stats.totals.testCases.failedButOk );
+-        }
+         xml.writeAttribute( "skipped"_sr, skipped );
+-        auto tests = stats.totals.assertions.total();
+-        if ( m_config->retryFailed() > 0 ) {
+-            tests = ( std::max )( tests, stats.totals.testCases.total() );
+-        }
+         xml.writeAttribute( "tests"_sr, tests );
+         xml.writeAttribute( "hostname"_sr, "tbd"_sr ); // !TBD
+         if( m_config->showDurations() == ShowDurations::Never )
+diff --git a/extras/catch_amalgamated.hpp b/extras/catch_amalgamated.hpp
+index b45f1dcb..fc826b02 100644
+--- a/extras/catch_amalgamated.hpp
++++ b/extras/catch_amalgamated.hpp
+@@ -7,7 +7,7 @@
+ // SPDX-License-Identifier: BSL-1.0
+ 
+ //  Catch v3.16.0
+-//  Generated: 2026-10-05 08:27:55.654902
++//  Generated: 2026-10-05 08:39:03.711378
+ //  ----------------------------------------------------------
+ //  This file is an amalgamation of multiple different files.
+ //  You probably shouldn't edit it directly.
+diff --git a/src/catch2/reporters/catch_reporter_junit.cpp b/src/catch2/reporters/catch_reporter_junit.cpp
+index 85551fa8..bbdb2bb4 100644
+--- a/src/catch2/reporters/catch_reporter_junit.cpp
++++ b/src/catch2/reporters/catch_reporter_junit.cpp
+@@ -17,6 +17,7 @@
+ #include <catch2/internal/catch_move_and_forward.hpp>
+ 
+ #include <cassert>
++#include <cstdint>
+ #include <ctime>
+ #include <algorithm>
+ #include <iomanip>
+@@ -141,6 +142,29 @@ namespace Catch {
+             return false;
+         }
+ 
++        bool hasJunitErrorElement(
++            CumulativeReporterBase::SectionNode const& sectionNode ) {
++            for ( auto const& assertionOrBenchmark :
++                  sectionNode.assertionsAndBenchmarks ) {
++                if ( !assertionOrBenchmark.isAssertion() ) { continue; }
++
++                auto const& result =
++                    assertionOrBenchmark.asAssertion().assertionResult;
++                if ( !shouldWriteJunitAssertion( result ) ) { continue; }
++
++                if ( result.getResultType() == ResultWas::ThrewException ||
++                     result.getResultType() ==
++                         ResultWas::FatalErrorCondition ) {
++                    return true;
++                }
++                break;
++            }
++            for ( auto const& child : sectionNode.childSections ) {
++                if ( hasJunitErrorElement( *child ) ) { return true; }
++            }
++            return false;
++        }
++
+         bool hasJunitMissingAssertions(
+             CumulativeReporterBase::SectionNode const& sectionNode ) {
+             if ( sectionNode.stats.missingAssertions ) { return true; }
+@@ -273,29 +297,31 @@ namespace Catch {
+ 
+         TestRunStats const& stats = testRunNode.value;
+         xml.writeAttribute( "name"_sr, stats.runInfo.name );
+-        auto failures =
+-            stats.totals.assertions.failed - unexpectedExceptions;
++        auto errors = static_cast<std::uint64_t>( unexpectedExceptions );
++        auto failures = stats.totals.assertions.failed - errors;
++        auto skipped = stats.totals.assertions.skipped;
++        auto tests = stats.totals.assertions.total();
+         if ( m_config->retryFailed() > 0 ) {
+-            auto const accountedFailures = failures + unexpectedExceptions;
+-            if ( stats.totals.testCases.failed > accountedFailures ) {
+-                failures +=
+-                    stats.totals.testCases.failed - accountedFailures;
++            errors = 0;
++            failures = 0;
++            for ( auto const& testCase : testRunNode.children ) {
++                if ( testCase->value.totals.testCases.failed == 0 ) {
++                    continue;
++                }
++                assert( testCase->children.size() == 1 );
++                if ( hasJunitErrorElement( *testCase->children.front() ) ) {
++                    ++errors;
++                } else {
++                    ++failures;
++                }
+             }
++            skipped = stats.totals.testCases.skipped +
++                      stats.totals.testCases.failedButOk;
++            tests = stats.totals.testCases.total();
+         }
+-        xml.writeAttribute( "errors"_sr, unexpectedExceptions );
++        xml.writeAttribute( "errors"_sr, errors );
+         xml.writeAttribute( "failures"_sr, failures );
+-        auto skipped = stats.totals.assertions.skipped;
+-        if ( m_config->retryFailed() > 0 ) {
+-            skipped = ( std::max )(
+-                skipped,
+-                stats.totals.testCases.skipped +
+-                    stats.totals.testCases.failedButOk );
+-        }
+         xml.writeAttribute( "skipped"_sr, skipped );
+-        auto tests = stats.totals.assertions.total();
+-        if ( m_config->retryFailed() > 0 ) {
+-            tests = ( std::max )( tests, stats.totals.testCases.total() );
+-        }
+         xml.writeAttribute( "tests"_sr, tests );
+         xml.writeAttribute( "hostname"_sr, "tbd"_sr ); // !TBD
+         if( m_config->showDurations() == ShowDurations::Never )
+diff --git a/tests/ExtraTests/X96-RetryFailed.cpp b/tests/ExtraTests/X96-RetryFailed.cpp
+index 7b637df2..ffc109ce 100644
+--- a/tests/ExtraTests/X96-RetryFailed.cpp
++++ b/tests/ExtraTests/X96-RetryFailed.cpp
+@@ -550,6 +550,24 @@ TEST_CASE( "retry missing assertions then passes",
+ TEST_CASE( "retry missing assertions always fails",
+            "[.retry-no-assertions-always]" ) {}
+ 
++TEST_CASE( "retry junit multiple passing assertions",
++           "[.retry-junit-multiple-passes]" ) {
++    CHECK( true );
++    CHECK( true );
++    CHECK( true );
++}
++
++TEST_CASE( "retry junit multiple failing assertions",
++           "[.retry-junit-multiple-failures]" ) {
++    CHECK( false );
++    CHECK( false );
++    CHECK( false );
++}
++
++TEST_CASE( "retry junit final error", "[.retry-junit-final-error]" ) {
++    throw std::runtime_error( "final junit error" );
++}
++
+ TEST_CASE( "retry independent X", "[.retry-independent]" ) {
+     ++independentXExecutions;
+     std::cout << "independent-X execution=" << independentXExecutions << '\n';
+diff --git a/tests/TestScripts/testRetryFailed.py b/tests/TestScripts/testRetryFailed.py
+index 718d02fa..0a1efeb6 100644
+--- a/tests/TestScripts/testRetryFailed.py
++++ b/tests/TestScripts/testRetryFailed.py
+@@ -1373,6 +1373,63 @@ def main():
+         assert "Attempt 1 of 3 failed:" in junit_exhausted_out.text
+         assert "Attempt 2 of 3 failed:" in junit_exhausted_out.text
+ 
++        junit_multiple_passes = run_reporter(
++            test_exe,
++            output_dir,
++            "JUnit",
++            "junit-multiple-passes",
++            ("--retry-failed", "1"),
++            "[.retry-junit-multiple-passes]",
++        )
++        junit_multiple_passes_suite = only_junit_suite(
++            junit_multiple_passes
++        )
++        assert junit_multiple_passes_suite.get("errors") == "0"
++        assert junit_multiple_passes_suite.get("failures") == "0"
++        assert junit_multiple_passes_suite.get("skipped") == "0"
++        assert junit_multiple_passes_suite.get("tests") == "1"
++        assert len(junit_multiple_passes_suite.findall("./testcase")) == 1
++        assert junit_multiple_passes_suite.findall(".//failure") == []
++        assert junit_multiple_passes_suite.findall(".//error") == []
++
++        junit_multiple_failures = run_reporter(
++            test_exe,
++            output_dir,
++            "JUnit",
++            "junit-multiple-failures",
++            ("--retry-failed", "1"),
++            "[.retry-junit-multiple-failures]",
++            42,
++        )
++        junit_multiple_failures_suite = only_junit_suite(
++            junit_multiple_failures
++        )
++        assert junit_multiple_failures_suite.get("errors") == "0"
++        assert junit_multiple_failures_suite.get("failures") == "1"
++        assert junit_multiple_failures_suite.get("skipped") == "0"
++        assert junit_multiple_failures_suite.get("tests") == "1"
++        assert len(junit_multiple_failures_suite.findall("./testcase")) == 1
++        assert len(junit_multiple_failures_suite.findall(".//failure")) == 1
++        assert junit_multiple_failures_suite.findall(".//error") == []
++
++        junit_final_error = run_reporter(
++            test_exe,
++            output_dir,
++            "JUnit",
++            "junit-final-error",
++            ("--retry-failed", "1"),
++            "[.retry-junit-final-error]",
++            42,
++        )
++        junit_final_error_suite = only_junit_suite(junit_final_error)
++        assert junit_final_error_suite.get("errors") == "1"
++        assert junit_final_error_suite.get("failures") == "0"
++        assert junit_final_error_suite.get("skipped") == "0"
++        assert junit_final_error_suite.get("tests") == "1"
++        assert len(junit_final_error_suite.findall("./testcase")) == 1
++        assert junit_final_error_suite.findall(".//failure") == []
++        assert len(junit_final_error_suite.findall(".//error")) == 1
++
+         junit_throw_once = run_reporter(
+             test_exe,
+             output_dir,
+-- 
+2.56.0.windows.1
+

@@ -10,17 +10,19 @@ H-2 resolution date: 2026-10-05
 
 M-2 resolution date: 2026-10-05
 
+M-3 resolution date: 2026-10-05
+
 Reviewed Catch2 revision: `9037e6faa6638b160d2f24e240f6b671d979c99d`
 
 Resolved Catch2 revision: `b19a1b75c19b6f85d438e0653855a20f6d5ef95d`
 
-Current Catch2 revision: `5669b8e64e6e86fcbd269e7d2c4aadf5745acd8d`
+Current Catch2 revision: `30ab6617e459ea98fbc27b4c201a73bccb20f213`
 
 Baseline: `v3.16.0` (`fd79eadb5bc1760e7cbae12fd45b0d0040d1bb73`)
 
 ## Gate Status
 
-**Not passed yet.** H-1, M-1, H-2, and M-2 are resolved. M-3 remains open, together with the low-severity L-1 documentation/evidence inconsistency. No Catch2 production or test file was changed during the read-only second review; the findings were fixed afterwards in separate commits.
+**Not passed yet.** H-1, M-1, H-2, M-2, and M-3 are resolved. Only the low-severity L-1 documentation/evidence inconsistency remains open. No Catch2 production or test file was changed during the read-only second review; the findings were fixed afterwards in separate commits.
 
 ## Findings
 
@@ -148,7 +150,7 @@ The first run ended with Catch2's all-skipped exit code and summary `1 skipped`,
 
 **Severity:** Medium
 
-**Status:** Open
+**Status:** Resolved
 
 For retry-enabled output, JUnit initializes `failures`, `skipped`, and `tests` from final assertion totals and only raises them to a test-case-derived minimum (`catch_reporter_junit.cpp:242-265`). This prevents superseded attempts from inflating the counters, but it does not implement the reviewed requirement that suite counters use final logical results (`03-spec.md:116`).
 
@@ -157,6 +159,8 @@ A single deterministic test containing three final `CHECK(false)` assertions, ru
 **Impact:** JUnit dashboards and aggregate metrics overcount tests and failures, and the suite attributes disagree with the document's child test-case count.
 
 **Required resolution:** define counters from the emitted final test-case representation (including error versus failure and accepted/skipped outcomes), while retaining superseded assertions only as non-counting diagnostics. Add multi-assertion pass and failure cases and assert both suite attributes and child-element counts.
+
+**Resolution:** With retries enabled, JUnit now counts final logical test cases for `tests`, `failures`, `errors`, and `skipped`. Each failed logical case contributes once and is classified as an error when its final emitted assertion tree contains an error element; accepted failures and skipped cases contribute to `skipped`. The zero-retry counter path remains unchanged. Parser checks cover a passing case with three assertions, a failing case with three assertions, and a final exception, including suite counters and direct child elements.
 
 ### L-1 — Reporter documentation and final validation note predate the semantic-outcome fix
 
@@ -173,7 +177,7 @@ A single deterministic test containing three final `CHECK(false)` assertions, ru
 - The deterministic unexpected-pass-to-accepted-`[!shouldfail]` transition is now covered by the recorder and both human-readable reporters, but not by every machine-readable reporter.
 - Exhausted and fail-then-pass `NoAssertions` paths are now parser/protocol-tested in JUnit, SonarQube, TeamCity, and TAP. Nested-section missing-assertion combinations remain outside the focused matrix.
 - Retried logical test cases ending as skipped or accepted failure are now covered directly for console and compact.
-- JUnit scenarios use one final assertion, so assertion-derived suite counters happen to equal logical test-case counters and M-3 is hidden.
+- Retry-enabled JUnit suite counts now cover multi-assertion pass and failure cases, as well as final exception classification. Zero-retry counter behavior remains on the legacy path.
 - Fatal-path structure is parser-tested only for JUnit. During review, XML output from the fatal fixture remained well-formed; JSON and Automake wrote no stdout before Windows terminated the process. This was not classified as a defect because fatal reporting is explicitly best-effort and the review did not establish a regression from `v3.16.0`, but it remains an unverified compatibility area.
 - Debugger-break preservation (`CO-6`) is supported only by code-path inspection; there is no automated debugger integration test.
 
@@ -181,7 +185,7 @@ A single deterministic test containing three final `CHECK(false)` assertions, ru
 
 The main scenario driver generally uses exact event sequences, exact totals, real JSON/XML parsers, negative assertions, exit-code checks, and fresh child processes. It would fail for common production regressions such as missing retries, leaked retry budgets, wrong final-only totals, broken attempt numbering, malformed JSON/XML, or superseded failures counted by the ordinary flaky scenarios. T03 also recorded an actual red harness run before its assertion was corrected.
 
-The first review found that reporter cases used ordinary failed assertions while special tags were exercised only through the recorder. H-1/M-1 added direct special-tag reporter coverage, H-2 added failures-without-assertion-events coverage, and M-2 added final skip and accepted-failure transitions for the human-readable reporters. The matrix still does not cover multiple final assertions in JUnit; that missing dimension explains the still-open M-3.
+The first review found that reporter cases used ordinary failed assertions while special tags were exercised only through the recorder. H-1/M-1 added direct special-tag reporter coverage, H-2 added failures-without-assertion-events coverage, M-2 added final skip and accepted-failure transitions for the human-readable reporters, and M-3 now checks multi-assertion final counts and JUnit error classification.
 
 ## Review Evidence
 
@@ -201,6 +205,9 @@ The first review found that reporter cases used ordinary failed assertions while
 - Resolved M-2 in `5669b8e6`: console and compact now derive their final retry line from logical test-case totals. New recorder and direct reporter scenarios cover failure-to-skip and unexpected-pass-to-accepted-`[!shouldfail]` transitions and reject the old `failed after` output.
 - Regenerated the amalgamated files and rebuilt both configured Windows trees after M-2. The focused group passed 5/5, the `all` preset passed 157/157, and the `basic` preset passed 92/92. No unapproved baseline was produced; the only build warnings were the four known baseline MSVC `D9025` warnings.
 - Applied all 17 exported patches to a new clean `v3.16.0` worktree. Its tree ID, `ac7d57c4101217f07fec20a6c8278f31f225e9e9`, exactly matched the implementation branch; the disposable worktree was then removed.
+- Resolved M-3 in `30ab6617`: retry-enabled JUnit suite counters now count final logical cases, including one failure per failed case and correct error/failure classification. New parser checks cover multiple final assertions and a final exception.
+- Regenerated amalgamated sources and rebuilt the configured Windows trees. The focused reporter/amalgamation group passed 5/5, `all` passed 157/157, and `basic` passed 92/92. No unapproved baseline was produced; the only build warnings were the four known baseline MSVC `D9025` warnings.
+- Applied all 18 exported patches to a clean `v3.16.0` worktree. Its tree ID, `8c8ac8df7cde538ceeb80dd299baec31103bf847`, exactly matched `30ab6617`; the disposable worktree was then removed.
 
 ## Resolution Log
 
@@ -210,5 +217,5 @@ The first review found that reporter cases used ordinary failed assertions while
 | M-1 | Resolved in `b19a1b75` (`0015-Report-semantic-retry-outcomes-in-machine-reporters.patch`) | New accepted-failure scenarios pass for all four reporters; basic preset 92/92; all preset 157/157 |
 | H-2 | Resolved in `0dd78e55` (`0016-Report-retry-failures-without-assertion-events.patch`) | Exhausted and fail-to-pass `NoAssertions` scenarios pass for JUnit, SonarQube, TeamCity, and TAP; TAP emits one point with plan `1..1`; focused group 5/5; all preset 157/157; basic preset 92/92 |
 | M-2 | Resolved in `5669b8e6` (`0017-Report-final-retry-outcomes-in-human-reporters.patch`) | Recorder totals and direct console/compact output checks cover final skip and accepted failure; focused group 5/5; all preset 157/157; basic preset 92/92 |
-| M-3 | Open | One JUnit child case with three final failures reports `tests="3" failures="3"` |
+| M-3 | Resolved in `30ab6617` (`0018-Count-logical-retry-results-in-JUnit-suites.patch`) | JUnit parser checks cover three-assertion pass/failure and final exception; focused group 5/5; all preset 157/157; basic preset 92/92; 18-patch clean-base application matches tree `8c8ac8df` |
 | L-1 | Open | Documentation and implementation-note evidence inspected against post-review behavior and commit history |
