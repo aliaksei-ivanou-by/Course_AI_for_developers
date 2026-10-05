@@ -162,7 +162,7 @@ Update this table as work progresses. A phase is complete only after its gate pa
 | 6. Implement in small tested slices | Catch2 commits and task evidence | Complete — T00–T14 done (see `artifacts/06-tasks.md`) |
 | 7. Review with fresh context | `artifacts/08-review.md` | Complete — all findings resolved; evidence recorded |
 | 8. Run full validation and convergence | `artifacts/09-validation.md` | Complete — basic 92/92, all 157/157; final retry-fatal rerun passed |
-| 9. Prepare the handoff and reflect | patch, implementation notes, `10-retrospective.md` | Not started |
+| 9. Prepare the handoff and reflect | patch, implementation notes, `10-retrospective.md` | In progress — branch, patch series, and retrospective prepared; final human review remains |
 
 ## Phase 0: Frame the Work and Establish Safety
 
@@ -603,6 +603,8 @@ The workthrough is complete only when all of the following are true:
 - [ ] A fresh-context review has no unresolved high-severity findings.
 - [ ] The final patch or branch is reproducible from the recorded baseline.
 
-## Immediate Next Step
+## Current Status and Next Step
 
-Begin with Phase 0 only: create and review `artifacts/00-task-contract.md`. Do not clone or modify Catch2 until the contract and permission boundary have been accepted.
+Phases 0–8 are complete. Phase 9 handoff materials are prepared for human
+review. After review, commit the approved course-side handoff changes; do not
+push unless explicitly requested.

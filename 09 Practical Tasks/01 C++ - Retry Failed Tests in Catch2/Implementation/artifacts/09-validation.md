@@ -41,7 +41,7 @@ passed all 157 tests. No cause for the one-off timeout was established.
 
 - `extras/catch_amalgamated.cpp` and `extras/catch_amalgamated.hpp` match the committed generated sources. The generator's only repeat-run differences were timestamps in their header comments; those were restored to keep the diff stable.
 - No `*.unapproved.txt` files were present in either configured build directory. ApprovalTests passed in both presets, and no baseline was approved or changed during this validation.
-- All 19 exported patches applied to a clean `v3.16.0` worktree. The resulting tree ID, `42faf819c2d9c5856822ff8780b0f9fe73ca9eef`, matched the validated Catch2 revision. The disposable worktree was removed after comparison.
+- All 19 exported patches applied to a clean `v3.16.0` worktree. The resulting tree ID, `42faf819c2d9c5856822ff8780b0f9fe73ca9eef`, matched the validated Catch2 revision. The disposable worktree was removed after comparison. `IMPLEMENTATION_NOTES.md` records the earlier M-3 checkpoint at `30ab6617` (18 patches); this Phase 8 check is the later documentation-only `a95e3dd1` checkpoint and supersedes that patch-series result.
 - A pattern scan of changed files found no PEM private-key headers, common AWS access key IDs, or common GitHub token forms. This is a targeted marker scan, not a general secrets audit.
 - Documentation now describes the accepted-failure reporter exception and `IMPLEMENTATION_NOTES.md` contains post-review commits and validation evidence. No checks were skipped.
 
