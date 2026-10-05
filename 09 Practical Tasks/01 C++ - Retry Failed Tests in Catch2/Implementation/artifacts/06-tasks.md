@@ -205,6 +205,16 @@ There is no cycle. T00, T01, and T02 touch disjoint files and can be done in any
 - **Evidence:** Linux (GCC, development build): `basic-tests` 91/91; the four retry extra tests 4/4; a deliberate regression that suppressed breaks with retries failed `RetryFailed::DebugBreak`, and the original JUnit and SonarQube message failed the nested-section scenario. A pristine `v3.16.0` build confirmed that JSON and Automake write nothing to stdout on the fatal path without retries. Windows `T15-run-01-basic`: HEAD `a95e3dd1…`, diff limited to the task files (11 changed, 2 new; 548 insertions, 59 deletions); 0 warnings; focused 2/2; **92/92**; no `*.unapproved.txt`. Windows `T15-run-02-all`: 4 baseline `D9025` warnings; focused 15/15; **158/158**; no `*.unapproved.txt`. `RetryFailed::Fatal --repeat until-fail:10`: 10/10, 43–63 s per run. Commits in `workspace/Catch2`: "Report nested missing assertions once per attempt", "Cover fatal reporters and debugger breaks with retries", and "Document retry-enabled reporter output and follow-up validation", exported as patches `0020`–`0022`; `git am` of `0001`–`0022` on a clean `v3.16.0` gives tree `9b5d39ece8842becb9e2dcf049b0b4f797897a82`.
 - **Independent:** no.
 
+### [x] T16 — Cover the `[!shouldfail]` transition in machine-readable reporters
+
+- **Outcome:** the last verification gap from `08-review.md` is closed: a `[!shouldfail]` test whose first attempt passes unexpectedly and whose retry fails as expected is checked in every machine-readable reporter.
+- **Files:** `tests/TestScripts/testRetryFailed.py`, `IMPLEMENTATION_NOTES.md`.
+- **Depends on:** T15.
+- **Focused tests:** with `--retry-failed 2` and the existing `[.retry-shouldfail-transition]` fixture: XML attempt results and accepted overall result; JSON test-case totals and per-attempt results; JUnit `skipped` with no failure or error and the superseded reason in `system-out`; SonarQube `skipped` and one attempt comment; TeamCity `testIgnored`, no `testFailed`, one `testStdErr`; TAP one `# TODO accepted failure` point, plan `1..1`, and the superseded reason; Automake `XFAIL`.
+- **Covers:** R-5, E-8, §5.2 machine-readable reporters (AC-25); review verification gap.
+- **Evidence:** Linux: scenario script passed (110 child runs); a deliberately wrong Automake expectation made it fail. No reporter code change was needed. Windows `T16-run-01-all`: diff limited to the script (176 insertions); nothing recompiled, 0 warnings; focused 1/1; **158/158**; no `*.unapproved.txt`. Commit in `workspace/Catch2`: "Cover shouldfail transition in machine-readable reporters", exported as patch `0023`; `git am` of `0001`–`0023` on a clean `v3.16.0` gives tree `18072a42c0498a3235e782eb2571883f7d4fb9ef`.
+- **Independent:** no.
+
 ## Coverage
 
 ### Specification requirements

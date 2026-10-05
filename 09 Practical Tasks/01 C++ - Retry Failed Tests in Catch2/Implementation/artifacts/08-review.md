@@ -6,13 +6,13 @@ Resolved Catch2 revision: `b19a1b75c19b6f85d438e0653855a20f6d5ef95d`
 
 Handoff Catch2 revision: `a95e3dd10ab0bdbe994152b59152cf220ddb3028`
 
-Follow-up Catch2 tree: `9b5d39ece8842becb9e2dcf049b0b4f797897a82` (patches `0020`–`0022`, task T15)
+Follow-up Catch2 trees: `9b5d39ece8842becb9e2dcf049b0b4f797897a82` (patches `0020`–`0022`, task T15); `18072a42c0498a3235e782eb2571883f7d4fb9ef` (patch `0023`, task T16)
 
 Baseline: `v3.16.0` (commit `317ac1ed4c0bb6e6b91eafc817e05c488feffcb3`; annotated tag object `fd79eadb5bc1760e7cbae12fd45b0d0040d1bb73`)
 
 ## Gate Status
 
-**Passed.** H-1, M-1, H-2, M-2, M-3, L-1, and the follow-up findings L-2, L-3, and L-4 are resolved. The reporter documentation describes retry-enabled output when no retry occurs, and the implementation notes include the post-review fixes, the follow-up coverage, and their validation results. Three of the four verification gaps are closed by automated tests (T15); the remaining gap and a preserved `v3.16.0` limitation are recorded below.
+**Passed.** H-1, M-1, H-2, M-2, M-3, L-1, and the follow-up findings L-2, L-3, and L-4 are resolved. The reporter documentation describes retry-enabled output when no retry occurs, and the implementation notes include the post-review fixes, the follow-up coverage, and their validation results. All four verification gaps are closed by automated tests (T15, T16); a preserved `v3.16.0` limitation is recorded below.
 
 ## Findings
 
@@ -190,15 +190,16 @@ Found by the same scenario. The failure text correctly said `No assertions in se
 
 ## Verification Gaps
 
-Closed by the follow-up task T15:
+Closed by the follow-up tasks T15 and T16:
 
 - Missing assertions in a nested leaf section, exhausted and fail-then-pass, are now covered for the recorder, JUnit, SonarQube, TeamCity, and TAP. The new checks found L-2 and L-3.
 - The fatal-error path is now covered for every built-in reporter. Console, compact, TAP, TeamCity, SonarQube, and Automake output is identical with and without `--retry-failed 2`; JSON differs only by the attempt keys; XML and JUnit are parsed. On a pristine `v3.16.0` build, JSON and Automake also write nothing to stdout on this path, and JSON leaves its document unfinished when writing to a file, so this is existing behaviour, not a regression.
 - Debugger-break preservation (`CO-6`) is now covered by `RetryFailed::DebugBreak`, which builds against the amalgamated sources with a recording `CATCH_BREAK_INTO_DEBUGGER`: every failed assertion breaks, including those of superseded attempts, and each break happens inside its attempt. The test failed as expected against a deliberately broken runner that suppressed breaks when retries were enabled.
 
-Still open:
+- The deterministic unexpected-pass-to-accepted-`[!shouldfail]` transition is now covered for XML, JSON, JUnit, SonarQube, TeamCity, TAP, and Automake in addition to the recorder and the human-readable reporters (T16). Every reporter already reported the accepted final outcome and kept the superseded reason; no code change was needed.
 
-- The deterministic unexpected-pass-to-accepted-`[!shouldfail]` transition is covered by the recorder and both human-readable reporters, but not by every machine-readable reporter.
+Preserved `v3.16.0` limitation:
+
 - With retries disabled, `v3.16.0` itself does not report a leaf section without assertions as a failure in JUnit, TeamCity, or TAP, and its TAP plan then names one point more than it emits. This zero-retry behaviour is preserved for compatibility and recorded as a limitation in `IMPLEMENTATION_NOTES.md`.
 
 ## Test-Quality Assessment

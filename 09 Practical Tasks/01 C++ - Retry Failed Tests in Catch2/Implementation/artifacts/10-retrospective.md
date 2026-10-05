@@ -26,7 +26,7 @@ Repeated full-suite runs added confidence after each reporter change, but their 
 
 ## Follow-up after the handoff
 
-The review listed verification gaps but did not require closing them before the handoff. Closing three of them afterwards (T15) found two small reporter defects and one inaccurate documentation statement, and the timings it recorded suggest that the earlier fatal-test timeout came from Windows crash handling under parallel load rather than from a hang. Untested areas named in a review are worth closing before the handoff, not only recording.
+The review listed verification gaps but did not require closing them before the handoff. Closing them afterwards (T15, T16) found two small reporter defects and one inaccurate documentation statement, and the timings it recorded suggest that the earlier fatal-test timeout came from Windows crash handling under parallel load rather than from a hang. Untested areas named in a review are worth closing before the handoff, not only recording.
 
 ## Improvements for the next task
 
@@ -37,8 +37,8 @@ The review listed verification gaps but did not require closing them before the 
 ## Reproduction
 
 - Catch2 branch: `task/retry-failed`
-- Catch2 handoff commit: `a95e3dd10ab0bdbe994152b59152cf220ddb3028`; follow-up tree `9b5d39ece8842becb9e2dcf049b0b4f797897a82`
+- Catch2 handoff commit: `a95e3dd10ab0bdbe994152b59152cf220ddb3028`; follow-up tree `18072a42c0498a3235e782eb2571883f7d4fb9ef`
 - Baseline: `v3.16.0` (commit `317ac1ed4c0bb6e6b91eafc817e05c488feffcb3`)
-- Exported patches: `patches/0001` through `patches/0022`
+- Exported patches: `patches/0001` through `patches/0023`
 - Validation: [09-validation.md](09-validation.md)
 - Proposed course handoff commit message, after review: `Record retry-failed implementation and validation handoff`

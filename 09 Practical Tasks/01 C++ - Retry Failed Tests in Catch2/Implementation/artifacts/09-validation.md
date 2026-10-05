@@ -57,6 +57,14 @@ On Windows, `scripts/phase6-validate.ps1` ran from the Implementation directory 
 
 `RetryFailed::Fatal` now runs serially and allows 120 seconds per crashing child instead of 20. On Linux the test takes under a second; on Windows each crashing child took about 2.5 seconds on average, which suggests that the operating system's crash handling, competing with parallel builds, caused the earlier 20-second timeout. This is a hypothesis; the timeout was not reproduced.
 
+## Follow-up Validation (T16)
+
+T16 added `[!shouldfail]` transition checks for every machine-readable reporter and changed only `tests/TestScripts/testRetryFailed.py`. On Linux the scenario script passed with 110 child runs; a deliberately wrong expectation made it fail. On Windows:
+
+| Command | Exit | Result |
+| --- | ---: | --- |
+| `phase6-validate.ps1 -Task T16 -Preset all -Filter 'RetryFailed::Scenarios'` | 0 | Diff limited to `tests/TestScripts/testRetryFailed.py` (176 insertions); nothing recompiled, 0 build warnings; focused 1/1; `all-tests` **158/158**; no `*.unapproved.txt` (`evidence/raw/phase6/T16-run-01-all/`). |
+
 ## Gate
 
-All configured `basic-tests` and `all-tests` checks passed on their final runs. The transient fatal-test timeout is recorded above with its successful isolated and full-suite reruns. Generated files, approval baselines, patch reproducibility, documentation, whitespace, and targeted credential-marker checks were reviewed. The T15 follow-up passed the same `basic-tests` and `all-tests` checks, and all 22 exported patches apply to a clean `v3.16.0` and reproduce tree `9b5d39ece8842becb9e2dcf049b0b4f797897a82`. Phase 8 validation is complete.
+All configured `basic-tests` and `all-tests` checks passed on their final runs. The transient fatal-test timeout is recorded above with its successful isolated and full-suite reruns. Generated files, approval baselines, patch reproducibility, documentation, whitespace, and targeted credential-marker checks were reviewed. The T15 and T16 follow-ups passed the same checks, and all 23 exported patches apply to a clean `v3.16.0` and reproduce tree `18072a42c0498a3235e782eb2571883f7d4fb9ef`. Phase 8 validation is complete.
