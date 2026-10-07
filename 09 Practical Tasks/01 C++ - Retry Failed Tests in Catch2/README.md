@@ -52,7 +52,7 @@ It was explicitly forbidden to implement this with a wrapper executable, a scrip
 
 ### 3.1 Workflow
 
-The work followed the phase-gated workflow from the Innowise Accelerator workshop, written down in [Implementation/README.md](Implementation/README.md). It combines Explore → Plan → Code → Commit, specification-driven development with Spec Kit concepts (without installing Spec Kit), context-engineering practices, and explicit human gates.
+The work used the C++ / Embedded Accelerator and the phase-gated process recorded in [Implementation/README.md](Implementation/README.md). The `feature` route combined Explore → Plan → Code → Commit, specification-driven development with Spec Kit concepts, context-engineering practices, and explicit human gates. Working state was maintained through `task-workspace`, and reviewed artifacts were exported to the course repository for submission.
 
 | Phase | Output | What happened |
 | --- | --- | --- |
@@ -184,21 +184,38 @@ On Windows, keep the build directories on a short path (for example `C:\build\..
 ### 10.1 Accelerator feedback
 
 **1. What is the accelerator, in my own words?**
-A disciplined way of working with AI agents on a real codebase: a written contract, a proven baseline, read-only exploration, a specification and plan reviewed by a human, small tasks each with its own test, a fresh-context review, full validation, and a retrospective. The agent proposes; evidence and the human decide.
+For me, the Accelerator is not another model or an autopilot; it is a controlled layer around a coding agent. It divides work into explicit stages, loads the right skill for each stage, preserves decisions and evidence across sessions, and stops at human approval gates. On this task it guided the Catch2 change from initial investigation to a reproducible patch series without mixing requirements, implementation, and verification in one long chat.
 
 **2. Which agent did I use?**
-Claude (Anthropic) in Cowork mode for framing, baseline, exploration, specification, planning, the first tasks, the final audit, and the follow-up; Codex (OpenAI) for most of the implementation, the review, validation, and handoff. See [3.2](#32-agents-and-roles).
+Through the Accelerator workflow I used Claude (Anthropic) in Cowork mode for onboarding, baseline verification, exploration, specification, planning, the first tasks, and the final follow-up. I then handed the persisted context to Codex (OpenAI), which performed most of the implementation, a fresh-context review, full validation, and submission preparation. The agent switch used a written handoff, so decisions did not have to be reconstructed from chat history. See [3.2](#32-agents-and-roles).
 
 **3. Which skills did I use?**
-No packaged agent skills were installed: the workflow says not to create a skill until a procedure has repeated and stabilized. The repeatable procedures were captured instead as PowerShell scripts (`phase1-baseline.ps1`, `phase1-all-tests.ps1`, `phase6-validate.ps1`) and as Spec Kit stages run manually through artifacts: constitution (task contract), specify, clarify, plan, tasks, implement.
+
+- `project-onboard` collected the project context: Catch2's purpose, the `v3.16.0` baseline, repository rules, CMake presets, test suites, and Windows/MSVC constraints.
+- `feature` drove the end-to-end `--retry-failed` route and placed human gates before specification, planning, and implementation.
+- `task-workspace` preserved state, decisions, evidence, and the next action across phases, context compaction, and the switch from Claude to Codex; reviewed results were then exported to `Implementation/artifacts/`.
+- `requirements-analyst` turned the assignment into a [specification](Implementation/artifacts/03-spec.md) with 50 requirements and 36 observable acceptance scenarios.
+- `requirements-clarifier` separated repository facts from human decisions and recorded decisions C1–C15 in the [clarification artifact](Implementation/artifacts/04-clarifications.md).
+- `writing-plans` produced the technical [plan](Implementation/artifacts/05-plan.md), [task list](Implementation/artifacts/06-tasks.md), and design [decisions](Implementation/artifacts/07-decisions.md), including files, dependencies, and verification commands.
+- `coder` implemented the approved plan in small changes: one task, focused verification, local commit, and reproducible patch at a time.
+- `testing` added regression coverage for the CLI, retry attempts, sections, generators, fixtures, abort behavior, and every reporter; real parsers validated machine-readable formats.
+- `systematic-debugger` handled the Windows path limit, approval-test conflicts, the fatal-error test timeout, and reporter defects by reproducing and isolating the cause before applying a minimal fix.
+- `self-review` checked each task's diff against the specification and for accidental scope growth before broader validation.
+- `code-reviewer` performed an independent fresh-context review. It produced nine findings, including five reporter defects, all of which were resolved.
+- `verify` mapped requirements to evidence and ran the final CMake/CTest, approval, parser, amalgamation, patch-replay, and secret-marker checks recorded in the [validation report](Implementation/artifacts/09-validation.md).
+- `handoff` transferred the goal, current phase, approved decisions, Git state, command results, and next action between sessions and agents.
+- `stabilize` captured recurring lessons: Windows builds moved to a short path, and the stable validation procedure became `phase6-validate.ps1` and its companion scripts.
+
+I did not use `bug`, `review-pr`, or `pr-review-response`: the original work was a new feature, and the deliverable was a local patch series rather than a PR. Defects found during review were resolved inside the same approved feature workspace.
 
 **4. In what order?**
-Contract → baseline → exploration → specify → clarify → plan with decisions → tasks → implement task by task → fresh-context review → full validation → handoff and retrospective → follow-up for the review's verification gaps.
+`project-onboard` → `feature` + `task-workspace` → `requirements-analyst` → `requirements-clarifier` → human specification gate → `writing-plans` → human plan gate → `coder` + `testing` + `self-review` for each task → `systematic-debugger` when a check failed → fresh-context `code-reviewer` → findings fixed through the same short loop → `verify` → final `handoff`. `handoff` was also used whenever the session or agent changed, while `stabilize` was invoked immediately after a recurring problem deserved a durable procedure. The Accelerator did not cross gates automatically: a human approved the specification, plan, and final readiness.
 
 **5. Did I like it, and was it easy to get into?**
-Observations from the work record: the gates and artifacts made it possible to continue after a context compaction and to switch agents mid-task without losing state, and a reviewer could always see why a decision was taken. The cost is overhead: for a 6–10 hour task, the specification and plan were substantial documents. Personal impressions are for the author to add.
+Yes. I mainly liked the predictability. It was not hard to learn: after `project-onboard`, the `feature` route made the current phase, expected artifact, and next approval gate explicit. The most useful parts were resuming after context compaction, transferring the task from Claude to Codex without losing decisions, and reviewing the implementation with fresh context. The trade-off was noticeable overhead: the specification, plan, and evidence log were substantial for a 6–10 hour assignment. The full route would be excessive for a tiny edit, but it paid off for a change spanning Catch2's runner and many reporters.
 
 **6. What problems did I run into?**
+- I first had to adapt the general `feature` route to a large C++ repository and choose the authoritative validation environment. `project-onboard` and `writing-plans` established Windows/MSVC as the primary loop and Linux/GCC as supporting evidence.
 - The Windows 260-character path limit broke the CMake compiler check; a `subst` drive workaround then broke the approval tests, so builds moved to `C:\build\Course_AI\catch2\`.
 - Every new SelfTest test changes all approval baselines; new tests were tagged `[approvals]` instead of rebasing 19 baselines.
 - Warnings are errors on both GCC and MSVC, so no code could be added before the task that used it.
@@ -255,7 +272,7 @@ The specification is the source of truth and the contract between human and agen
 Goal, scope and out of scope, acceptance criteria, constraints, and edge cases. `03-spec.md` has requirement groups for CLI, retry decision, state, events, totals, abort, and compatibility, an acceptance table, and documentation obligations.
 
 **What is a skill, and when should it be used? How do hooks differ?**
-A skill is a `SKILL.md` with instructions loaded on demand; a hook is a deterministic command on an agent event that always runs. None were used: the stable repeated procedure here was the validation, captured as a script. A post-edit hook that builds and runs the focused tests would be the natural next step.
+A skill is a `SKILL.md` containing a method and output contract that the agent loads on demand. Accelerator skills placed the agent in different working modes here: `requirements-analyst` produced the specification, `coder` changed code, `code-reviewer` looked for defects, and `verify` gathered readiness evidence. A hook is different: it is a deterministic command automatically triggered by an agent event, independently of the model's reasoning. I did not add project-specific hooks; the repeated validation procedure was made explicit in `phase6-validate.ps1`, so it could be invoked at the right workflow point and retain its full result.
 
 **Which tasks suit subagents, and what are the risks?**
 Independent, read-only work: exploration and review. Implementation touched shared files, so it stayed with one agent at a time; the fresh-context review was a separate session, which gave the same isolation without concurrent edits.
